@@ -9,6 +9,7 @@ def getTrialFrames(CWD,TASK,TRIAL):
     TrialRoot = os.path.join(CWD,"data","images",TRIAL)
     for root, dirs, files in os.walk(TrialRoot):
         Frames = files
+        Frames = [f for f in files if ".png" in f]
         break    
     frameNumbers = []
     for f in Frames:

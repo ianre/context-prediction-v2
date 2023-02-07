@@ -2,3 +2,4 @@
 data/images/*/*.png
 data/masks/*/*/*/*.png
 win-env/
+eval/labeled_images/

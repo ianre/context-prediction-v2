@@ -25,7 +25,7 @@ class Contour_Iterator:
         elif "Suturing" in TRIAL:
             return ["leftgrasper","rightgrasper","thread","needle"]
 
-    def ExtractContoursTask(self, TRIAL, FRAME_NUMS):
+    def ExtractContoursTrial(self, TRIAL, FRAME_NUMS):
         classNameIndex=0
         ContourFiles = []
         label_classes = self.getLabelClassnames(TRIAL)
@@ -92,6 +92,14 @@ class Contour_Iterator:
         # load json points for trial
         VIA = utils.ViaJSONTemplate(VIATemplate)
 
+        if(not os.path.isdir(OutRoot)):
+                path = pathlib.Path(OutRoot)
+                path.mkdir(parents=True, exist_ok=True)
+
+        if(not os.path.isdir(PointsRoot)):
+                path = pathlib.Path(PointsRoot)
+                path.mkdir(parents=True, exist_ok=True)
+
         for file in FRAME_NUMS:            
             file = "frame_"+file+".png"
 
@@ -100,19 +108,13 @@ class Contour_Iterator:
             
             imageFname = os.path.join(TrialRoot,file)
             if not os.path.isfile(imageFname): continue
-            if(not os.path.isdir(OutRoot)):
-                path = pathlib.Path(OutRoot)
-                path.mkdir(parents=True, exist_ok=True)
-            if(not os.path.isdir(PointsRoot)):
-                path = pathlib.Path(PointsRoot)
-                path.mkdir(parents=True, exist_ok=True)
             
             img_3 = np.zeros([500,700,3],dtype=np.uint8)
             img_3.fill(255)
 
             #outFname =  os.path.join(OutRoot,file.replace(".png",".npy"))
             non_pred_name = file.replace("_pred","")
-            videoFrame = os.path.join(self.imagesDir,TRIAL,non_pred_name)
+            videoFrame = os.path.join(self.imagesDir,non_pred_name)
             testFname = os.path.join(OutRoot,file)
             #frameNumber = int(file.replace(".png","").split("_")[1])
             im = cv.imread(imageFname)
@@ -124,16 +126,13 @@ class Contour_Iterator:
             #colors = 
             if(len(contours) ==0):continue
             areas = []
-            largestIndex = -1
-            largestArea = 0
-            
+            largestArea = 0            
             
             for k in range(len(contours)):                    
                 cnt = contours[k]
                 area = cv.contourArea(cnt)
                 areas.append(area)
                 if area>largestArea:
-                    largestIndex=k
                     largestArea=area
 
             Regions = []
@@ -164,7 +163,7 @@ class Contour_Iterator:
                 #cv.drawContours(im,[approx],0,rbg,1)
                 cv.polylines(img_3, [newShape], True, (0,0,255), thickness=1)
                 #cv.putText(im,LabelClassName,(cnt[0][0][0],cnt[0][0][1]), cv.FONT_HERSHEY_SIMPLEX,0.5,rbg)
-                RegionAttributes.append(LabelClassName)
+                RegionAttributes.append(label_class)
                 Regions.append([X,Y])
                 #else: 
                 #    break
@@ -181,7 +180,7 @@ class Contour_Iterator:
                     print("=======================================================================================================================================================================================================================>",LabelClassName)
                     print("len contours:",len(contours),hierarchy)
                 elif len(contours) > 1:
-                    print("===================================================================================>",LabelClassName)
+                    print("===================================================================================>",label_class)
                     print("len contours:",len(contours),hierarchy)
                 else:
                     print("len contours:",len(contours),hierarchy)

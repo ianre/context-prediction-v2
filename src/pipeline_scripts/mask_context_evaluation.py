@@ -135,6 +135,207 @@ class Context_Iterator:
             break
         return Dirs
 
+    def GenerateContextTrial(self, TRIAL, FRAME_NUMS,label_classes, ContourFiles, RingFile, SAVE=False):
+        count = 0
+        #VIA is a labeling app we used to manually annotate Tissue points and Grasper Ends  
+        # [Knot_Tying_S01_T01]["100"] = [Points]
+        DeeplabVIAPoints = {}
+        DeeplabVIAFrames = {}
+        DeeplabVIARings = {}
+        
+        Tissues, TissueFrames = self.getTissueData(TRIAL) # tissue points 
+        GrasperJaws, GrasperFrames = self.getGrasperJawData(TRIAL) # grasper points
+        DeeplabVIAPoints, DeeplabVIAFrames, DeeplabVIARings  = self.getContourData(ContourFiles,RingFile,label_classes,label_classNames) # We process the output of contours.py here
+
+        # at this point, you should have all of the contour and VIA labels (grasper jaw, tissue points)       
+        # FRAME_NUMS: These are all the trial we'll generate context labels for. We get this list from the images folder
+       
+        #print("Trials:",FRAME_NUMS)
+        TrialRoot = os.path.join(self.imagesDir,TRIAL)        
+        imageRoot = TrialRoot
+        contextLines = []
+        ctxFName = os.path.join(self.ctxConsensusDir,TRIAL+".txt")
+        #ctxPredFName = os.path.join(self.context_output,TRIAL+"_"+str(EPOCH)+".txt") # maybe not to evaluate, rewrite if epoch ==0, otherwise juust apped
+        ctxPredFName = os.path.join(self.context_output,TRIAL+".txt")
+        if(os.path.isfile(ctxPredFName) and EPOCH == 0):
+            os.remove(ctxPredFName) 
+            
+        frameNum = 0
+        currentRing = 7
+        #for root, dirs, files in os.walk(TrialRoot):
+        for file in FRAME_NUMS:
+            frameNumber = int(file) # has to be a number to index into arrays
+            file = "frame_"+file+".png"
+            if "frame" not in file:
+                continue
+            frameNum+=1
+            imageFName = os.path.join(imageRoot, file)
+            cogitoRoot = TrialRoot.replace("images","annotations")                
+            cogitoFName = os.path.join(cogitoRoot, utils.imageToJSON(file))
+            outputRoot =  os.path.join(self.deeplabOutputDir,TRIAL)
+            outputFName = os.path.join(self.deeplabOutputDir,TRIAL, file)
+            
+            closestIndex = -1
+            if "Suturing" in self.task: 
+                TissueClosestIndex = TissueFrames[TRIAL][0]
+                #frameNumber = 109
+                tfs = TissueFrames[TRIAL]
+                TissueClosestIndex = self.findClosestIndex(frameNumber,tfs)                    
+                TissuePoints = Tissues[TRIAL][str(TissueClosestIndex)]
+                GrasperJawPoints = GrasperJaws[TRIAL][str(TissueClosestIndex)]
+                closestIndex = TissueClosestIndex
+                #print("Drawing Segmentation labels and Keypoints:", os.path.basename(root),file)
+            else:
+                gfs = GrasperFrames[TRIAL]
+                GrasperClosestIndex = self.findClosestIndex(frameNumber,gfs)              
+                GrasperJawPoints = GrasperJaws[TRIAL][str(GrasperClosestIndex)]
+                closestIndex = GrasperClosestIndex
+            
+            # All _dl_points contains the contours that are applicable for this Task and Trial combo                    
+            All_dl_points = DeeplabVIAPoints[TRIAL] #["class"]["frame"] = list of points
+            if "Needle" in self.task:
+                All_ring_points = DeeplabVIARings[TRIAL]
+                try:
+                    Ring4Points = All_ring_points["Ring_4"][str(frameNumber)]
+                    Ring5Points = All_ring_points["Ring_5"][str(frameNumber)]
+                    Ring6Points = All_ring_points["Ring_6"][str(frameNumber)]
+                    Ring7Points = All_ring_points["Ring_7"][str(frameNumber)]
+                except Exception as e:
+                    print(e,"in RingPoints")
+                    Ring4Points = {}
+                    Ring5Points = {}
+                    Ring6Points = {}
+                    Ring7Points = {}
+
+            
+            threadRoot = TrialRoot.replace("images","2023_thread_masks")
+            annotationRoot = TrialRoot.replace("images","annotations")
+
+            threadMaskImage = os.path.join(threadRoot, file)
+            annotationFile = os.path.join(annotationRoot, utils.imageToJSON(file))
+
+            # Getting particular contours (array of points)
+            try:
+                LgrasperPoints = All_dl_points["2023_grasper_L"][str(frameNumber)]
+            except Exception as e:
+                #print(e,"in LgrasperPoints") # missing mask
+                LgrasperPoints = {}
+
+            try:
+                RgrasperPoints = All_dl_points["2023_grasper_R"][str(frameNumber)]
+            except Exception as e:
+                #print(e,"in RgrasperPoints")  # missing mask
+                RgrasperPoints = {}
+
+            if "Needle" in self.task or "Suturing" in self.task:
+                try:                        
+                    NeedlePoints = All_dl_points["2023_needle"][str(frameNumber)]
+                except Exception as e:
+                    #print(e,"in NeedlePoints")  # missing mask
+                    NeedlePoints = {}
+
+            CtxI = utils.ContextInterface2(ctxFName)
+            J = utils.JSONInterface(annotationFile)
+
+            # gtPolygons are Ground Truth contour points for the cogito labels
+            gtPolygons = J.getPolygonsDict(); # graspers only in KT, 
+
+            # gtKeypoints are Ground Truth points from cogito labels
+            gtKeypoints = J.getKeyPointsDict(); # None in KT,
+            cn,polylineSeries = J.getPolyLines();
+            SingleThreadX = []
+            SingleThreadY = []
+            for i in range(len(polylineSeries)):
+                l = len(polylineSeries)
+                for j in range(0,len(polylineSeries[i]),2):
+                    SingleThreadX.append(polylineSeries[i][j])
+                    SingleThreadY.append(polylineSeries[i][j+1])
+            SingleThreadPoints = [(SingleThreadX[i],SingleThreadY[i]) for i in range(len(SingleThreadX))]
+
+            TContours = self.getThreadContours(threadMaskImage)
+            ThreadContours = []
+            minArea = 80
+            for k in range(len(TContours)):                    
+                cnt = TContours[k]
+                area = cv.contourArea(cnt)
+                if area >= minArea:
+                    ThreadContours.append(cnt)
+
+
+            # Getting grasper open/closed from grasper points
+            L_Gripping, R_Gripping, L_Dist,R_Dist, Grasper_DistX = self.processGrasperData(GrasperJawPoints)                    
+
+            if(not os.path.isdir(outputRoot)):
+                path = pathlib.Path(outputRoot)
+                path.mkdir(parents=True, exist_ok=True)
+                
+            # pred has all of the polygons from Zoey's masks
+            # gt has all of the polygons from cogito
+            pred, gt = self.GetCommonShapes(gtPolygons,gtKeypoints,SingleThreadPoints,polylineSeries,ThreadContours,LgrasperPoints,RgrasperPoints)
+
+            # maskify Thread
+            if("Knot" in self.task):
+                #pred, gt = self.GetKTShapes(gtPolygons,gtKeypoints,SingleThreadPoints,ThreadContours,LgrasperPoints,RgrasperPoints)     
+                
+                #dev                    
+                ctxPredLine, LG_inter_T, RG_inter_T = self.GenerateContextLineKT(pred, gt ,L_Gripping,R_Gripping,frameNumber,contextLines,Grasper_DistX)    
+
+                #GT                    
+                #ctxPredLine, LG_inter_T, RG_inter_T = self.GenerateContextLineKT(gt,pred, L_Gripping,R_Gripping,frameNumber,contextLines,Grasper_DistX)                         
+                
+                contextLines.append(ctxPredLine)
+                #print(Trial,frameNumber,ctxPredLine)
+                #self.DrawSingleImageContextKT(pred, gt,GrasperJawPoints,imageFName,outputFName,CtxI,ctxPredLine,frameNumber,L_Gripping,R_Gripping,LG_inter_T, RG_inter_T)
+            
+            if("Needle" in self.task):
+                #pred, gt = self.GetCommonShapes(gtPolygons,gtKeypoints,SingleThreadPoints,ThreadContours,LgrasperPoints,RgrasperPoints)
+                ringShapes, ringShapes_gt = self.GetRingShapes(Ring4Points,Ring5Points,Ring6Points,Ring7Points,gtPolygons)
+                needleShape, needleShape_gt = self.GetNeedleShapes(NeedlePoints,gtPolygons)
+                #gt, pred, ringShapes_gt, ringShapes, needleShape_gt, needleShape -> GT Test
+                #ctxPredLine, LG_inter_T, RG_inter_T,messages = "",0,0,[]                    # this causes list error, switching gt with pred
+                
+                #pred, gt, ringShapes, ringShapes_gt, needleShape, needleShape_gt -> dev
+                ctxPredLine, LG_inter_T, RG_inter_T,messages = self.GenerateContextLineNP(pred, gt, ringShapes, ringShapes_gt, needleShape, needleShape_gt, L_Gripping,R_Gripping,frameNumber,contextLines,Grasper_DistX,currentRing)                        
+                #gt, pred, ringShapes_gt, ringShapes, needleShape_gt, needleShape -> GT Test 
+                #ctxPredLine, LG_inter_T, RG_inter_T,messages = self.GenerateContextLineNP(gt, pred, ringShapes_gt, ringShapes, needleShape_gt, needleShape, L_Gripping,R_Gripping,frameNumber,contextLines,Grasper_DistX,currentRing)
+
+                contextLines.append(ctxPredLine)
+                #print(TRIAL,frameNumber,ctxPredLine)
+                #self.DrawSingleImageContextNP(pred, gt, ringShapes, ringShapes_gt, needleShape, needleShape_gt,GrasperJawPoints,imageFName,outputFName,CtxI,ctxPredLine,frameNumber,L_Gripping,R_Gripping,LG_inter_T, RG_inter_T,messages,GT=False)
+            if("Suturing" in self.task):              
+                needleShape, needleShape_gt = self.GetNeedleShapes(NeedlePoints,gtPolygons)                        
+                # gt_bisector is the distance 
+                gt_bisector, gt_tissue, pred_bisector, pred_tissue,Bisector = self.GetTissueDist(TissuePoints,needleShape, needleShape_gt) 
+
+                # Predicted comparison
+                ctxPredLine, LG_inter_T, RG_inter_T,messages = self.GenerateContextLineS(pred, gt ,needleShape,needleShape_gt ,L_Gripping,R_Gripping,frameNumber,contextLines,gt_bisector, gt_tissue, pred_bisector, pred_tissue,Bisector)
+                
+                # Ground Truth comparison
+                # ctxPredLine, LG_inter_T, RG_inter_T,messages = self.GenerateContextLineS(gt, pred, needleShape_gt, needleShape, L_Gripping,R_Gripping,frameNumber,contextLines,gt_bisector, gt_tissue, pred_bisector, pred_tissue,Bisector)
+                                        
+                #messages.append("LJ Dist:"+"{:.2f}".format(L_Dist) + str(L_Gripping))
+                #messages.append("RJ Dist:"+"{:.2f}".format(R_Dist)+ str(R_Gripping))
+                #messages.append("D(LG,T)"+"{:.2f}".format(LG_inter_T))
+                #messages.append("D(RG,T):"+"{:.2f}".format(RG_inter_T))                        
+
+                contextLines.append(ctxPredLine)
+                #print(Trial,frameNumber,ctxPredLine)
+                #self.DrawSingleImageContextS(pred, gt,needleShape,needleShape_gt,GrasperJawPoints,imageFName,outputFName,CtxI,ctxPredLine,frameNumber,L_Gripping,R_Gripping,LG_inter_T, RG_inter_T,messages)
+            count += 1
+
+        
+        
+        print("\t '%' proc",os.path.basename(TrialRoot),"count:",frameNum)
+        if(len(contextLines) > 2 and SAVE):                
+            #print("saving",ctxPredFName)
+            count+=1
+            outdir = os.path.abspath(ctxPredFName + "/../")
+            if(not os.path.isdir(outdir)):
+                path = pathlib.Path(outdir)
+                path.mkdir(parents=True, exist_ok=True)
+            utils.saveAppend(ctxPredFName,contextLines)
+        #print(count,"images processed!")
+
     def GenerateContext(self, BATCH_SIZE, EPOCH,TRIAL, FRAME_NUMS,label_classes, label_classNames,ContourFiles, RingFile, SAVE=False):
         count = 0
         #VIA is a labeling app we used to manually annotate Tissue points and Grasper Ends  
