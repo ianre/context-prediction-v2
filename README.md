@@ -1,10 +1,17 @@
 # Context Prediction ~~V1~~ V2
 
-* `src/run_pipeline.py` is the script generates context labels based on the deeplab instrument masks without kinematics
-* Data is in the same format as the DSA_Thread_Sampling repo
+## Start here
+run the following commands with python 3.9 or above
+* `python -m venv context-env`
+* `.\context-env\Scripts\activate`
+* `pip install -r requirements.txt`
+* `.\src\run_pipeline.py` - to run the script generates context labels based on the deeplab instrument masks without kinematics
+
 
 # Naming Conventions 
 Tasks can be Needle_Passing, Knot_Tying, Suturing
+
+Data is in the same format as the DSA_Thread_Sampling repo
 
 Masks belong to sets such as 2023_ICRA, COGITO_GT, 2023_DL, ...
 
