@@ -91,15 +91,17 @@ def main():
     quit(); 
 
 class Metrics_Iterator:
-    def __init__(self, task,CWD):
+    def __init__(self,MASK_SET, task,CWD):
+
         self.CWD = CWD        
         self.task = task
-        self.outputDir = os.path.join(self.CWD, self.task,"ctx_output")
+        self.MASK_SET = MASK_SET
+        self.outputDir = os.path.join(self.CWD, self.task,"ctx_output") #ugh
         self.ian = os.path.join(self.CWD,self.task, "ctx_ian")
         self.kay = os.path.join(self.CWD,self.task, "ctx_kay")
-        self.pred = os.path.join(self.CWD, self.task,"2023_vis_context_labels_v1") # vis_context_labels_v4,context_proc, vis_context_labels_v5_gt 
+        self.pred = os.path.join(self.CWD,"eval","pred_context_labels",MASK_SET)
         self.context_proc = os.path.join(self.CWD,self.task,"context_proc_30fps_gt")
-        self.consensus = os.path.join(self.CWD, self.task,"ctx_consensus")    
+        self.consensus = os.path.join(self.CWD,"data","context_labels","consensus")
         self.surgeon =      os.path.join(self.CWD, self.task,"ctx_surgeon")    
         self.alpha = os.path.join(self.CWD, self.task,"k_alpha")
 

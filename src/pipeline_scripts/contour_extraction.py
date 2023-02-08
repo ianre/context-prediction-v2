@@ -85,7 +85,7 @@ class Contour_Iterator:
         TrialRoot = os.path.join(self.CWD,"data","masks",self.MASK_SET,label_class,TRIAL)
         #OutRoot = TrialRoot.replace("context-prediction-main\\"+self.task,"context-prediction-main\\"+self.task+"\\2023_contour_images")
         OutRoot = os.path.join(self.CWD,"eval","labeled_images",self.MASK_SET,label_class,TRIAL)
-        PointsRoot = os.path.join(self.CWD,"data","contours",self.MASK_SET)
+        PointsRoot = os.path.join(self.CWD,"data","contours",self.MASK_SET,label_class)
 
         VIATemplate =  os.path.join(self.CWD,"contour_template.json")
         VIAOutput =  os.path.join(PointsRoot,TRIAL+".json") # This is where we try to separate contour points by epoch
