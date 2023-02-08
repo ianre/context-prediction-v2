@@ -25,14 +25,14 @@ def all_trial_pipeline(MASK_SET,TRIALS,TASK,CWD):
 
     print("Pipeline Running for task ",TASK)
     for TRIAL in TRIALS:
-        start_time = time.time()
-
+        start_time = time.time()        
         TRIAL_FRAMES = getTrialFrames(CWD,TASK,TRIAL) # formatted as the XXXX in 'frame_XXXX.png'
         I = Contour_Iterator(MASK_SET,TRIAL,CWD)
         label_classes, ContourFiles, RingFile = I.ExtractContoursTrial(TRIAL,TRIAL_FRAMES)
         I = Context_Iterator(MASK_SET,TASK,TRIAL,CWD)
         I.GenerateContextTrial(TRIAL,TRIAL_FRAMES,label_classes, ContourFiles,RingFile,SAVE=True)
         end_time = time.time()
+        print("\t Processed: ",TRIAL)
         
         task_time = end_time - start_time
         TOTAL_TIME += task_time

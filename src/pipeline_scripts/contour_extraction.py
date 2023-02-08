@@ -145,6 +145,8 @@ class Contour_Iterator:
                 # smoothing and drop out turned off
                 #if len(Regions) <= 2:
                 #    if area > 15 or len(Regions) == 0:
+                if area < 5: 
+                    continue
                 areasInOrderSaved.append(area)
                 cnt = contours[origIndex]                        
                 X = []
