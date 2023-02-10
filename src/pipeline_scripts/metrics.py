@@ -338,7 +338,9 @@ class Metrics_Iterator:
         c5 = []
         for root, dirs, files in os.walk(self.pred): # self.consensus will have too many files
             for file in files:
-                count=count+1                
+                if not self.task in file:
+                    continue
+                count=count+1
                 '''
                 pred_file = os.path.join(self.consensus, file)
                 consensus_file = os.path.join(self.surgeon, file)
@@ -437,11 +439,15 @@ class Metrics_Iterator:
                 c3.append(s3)
                 c4.append(s4)
                 c5.append(s5)
-                print(s1,s2,s3,s4,s5)
+                
                 dis = distance.jaccard(pred_arr,con_arr)
                 intersections.append(1-dis)
                 IOU_frame.append(statistics.mean(frame_IOU))
-                print(file,dis,statistics.mean(frame_IOU))
+                trialName = file.replace(".txt.","")
+                #print(file,":",dis,statistics.mean(frame_IOU))
+                #spaces=" "
+                #print(f"{spaces*len(file)}",s1,s2,s3,s4,s5)
+                print(trialName,":",round(s1,4),round(s2,4),round(s3,4),round(s4,4),round(s5,4))
                 #self.save(out_file,out_lines)
                 #self.save(alpha_file, alpha_lines)
         print("s1 avg",statistics.mean(c1))
@@ -449,10 +455,10 @@ class Metrics_Iterator:
         print("s3 avg",statistics.mean(c3))
         print("s4 avg",statistics.mean(c4))
         print("s5 avg",statistics.mean(c5))
-        print("\t\tsk avg:",statistics.mean([statistics.mean(c1),statistics.mean(c2),statistics.mean(c3),statistics.mean(c4),statistics.mean(c5)]))
-        print("Frame level:",statistics.mean(intersections)) 
-        print("Annotation level:",statistics.mean(IOU_frame))
-        print(count,"files processed!")
+        print("\t\t Task IoU avg:",statistics.mean([statistics.mean(c1),statistics.mean(c2),statistics.mean(c3),statistics.mean(c4),statistics.mean(c5)]))
+        #print("Frame level:",statistics.mean(intersections)) 
+        #print("Annotation level:",statistics.mean(IOU_frame))
+        #print(count,"files processed!")
 
     '''Usage
     def get_overlap_f1(self, overlap, bg_class):

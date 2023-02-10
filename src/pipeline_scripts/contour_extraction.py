@@ -39,12 +39,14 @@ class Contour_Iterator:
         elif "Needle_Passing" in TRIAL:
             for label_class in label_classes:
                 #ContourFname = self.findAllContoursTask(label_class,label_classNames[classNameIndex],EPOCH,TRIAL,FRAME_NUMS,SAVE_TEST_IMAGE=True,SAVE_DATA=True)
+                ContourFname = self.findMaskContours(label_class,TRIAL,FRAME_NUMS,SAVE_TEST_IMAGE=True,SAVE_DATA=True)
                 ContourFiles.append(ContourFname)
                 classNameIndex+=1
-            RingFile = self.findRingContoursTimed("2023_ring_masks","",EPOCH,TRIAL,FRAME_NUMS,SAVE_DATA=True)
+            RingFile = self.findRingContoursTimed("ring",TRIAL,FRAME_NUMS,SAVE_DATA=True)
         elif "Suturing" in TRIAL:
             for label_class in label_classes:
                 #ContourFname = self.findAllContoursTask(label_class,label_classNames[classNameIndex],EPOCH,TRIAL,FRAME_NUMS,SAVE_TEST_IMAGE=True,SAVE_DATA=True)
+                ContourFname = self.findMaskContours(label_class,TRIAL,FRAME_NUMS,SAVE_TEST_IMAGE=True,SAVE_DATA=True)
                 ContourFiles.append(ContourFname)
                 classNameIndex+=1
         return label_classes, ContourFiles, RingFile
@@ -81,10 +83,9 @@ class Contour_Iterator:
         # to find the contours for a single mask class,
         # we need the directory of all the .pngs we need to process
         # and where to output them
-
         TrialRoot = os.path.join(self.CWD,"data","masks",self.MASK_SET,label_class,TRIAL)
         #OutRoot = TrialRoot.replace("context-prediction-main\\"+self.task,"context-prediction-main\\"+self.task+"\\2023_contour_images")
-        OutRoot = os.path.join(self.CWD,"eval","labeled_images",self.MASK_SET,label_class,TRIAL)
+        OutRoot = os.path.join(self.CWD,"eval","contour_images",self.MASK_SET,label_class,TRIAL)
         PointsRoot = os.path.join(self.CWD,"data","contours",self.MASK_SET,label_class)
 
         VIATemplate =  os.path.join(self.CWD,"contour_template.json")
@@ -151,7 +152,7 @@ class Contour_Iterator:
                 cnt = contours[origIndex]                        
                 X = []
                 Y = []
-                epsilon = 0.001*cv.arcLength(cnt,True) #0.01 smaller number for less smoothing
+                epsilon = 0.01*cv.arcLength(cnt,True) #0.01 smaller number for less smoothing
                 approx = cv.approxPolyDP(cnt,epsilon,True)
                 pts = []
                 for points in approx:
@@ -302,15 +303,24 @@ class Contour_Iterator:
             VIA.save(VIAOutput)    
         return VIAOutput
 
-    def findRingContoursTimed(self,LabelClass,LabelClassName,EPOCH,TRIAL,FRAME_NUMS, SAVE_TEST_IMAGE=False, SAVE_DATA=False, DEBUG=False):                
-        TrialRoot = os.path.join(self.CWD,self.task,LabelClass,TRIAL)
-        OutRoot = TrialRoot.replace("context-prediction-main\\"+self.task,"context-prediction-main\\"+self.task+"\\2023_contour_images")
-        PointsRoot = os.path.join(self.CWD,self.task,"2023_contour_points",LabelClass)
+    def findRingContoursTimed(self,label_class,TRIAL,FRAME_NUMS, SAVE_TEST_IMAGE=False, SAVE_DATA=False, DEBUG=False):
+        TrialRoot = os.path.join(self.CWD,"data","masks",self.MASK_SET,label_class,TRIAL)
+
+        OutRoot = os.path.join(self.CWD,"eval","contour_images",self.MASK_SET,label_class,TRIAL)
+        PointsRoot = os.path.join(self.CWD,"data","contours",self.MASK_SET,label_class)
         #TrialRoot.replace("context-prediction-main\\"+self.task,"context-prediction-main\\"+self.task+"\\contour_points")
         VIATemplate =  os.path.join(self.CWD,"contour_template.json")
-        VIAOutput =  os.path.join(PointsRoot,TRIAL+"_"+str(EPOCH)+".json")
+        VIAOutput =  os.path.join(PointsRoot,TRIAL+".json")
         # load json points for trial
         VIA = utils.ViaJSONTemplate(VIATemplate)
+
+        if(not os.path.isdir(OutRoot)):
+            path = pathlib.Path(OutRoot)
+            path.mkdir(parents=True, exist_ok=True)
+
+        if(not os.path.isdir(PointsRoot)):
+            path = pathlib.Path(PointsRoot)
+            path.mkdir(parents=True, exist_ok=True)
 
         
         for file in FRAME_NUMS:
@@ -319,16 +329,11 @@ class Contour_Iterator:
                 continue
             
             imageFname = os.path.join(TrialRoot,file)
-            if(not os.path.isdir(OutRoot)):
-                path = pathlib.Path(OutRoot)
-                path.mkdir(parents=True, exist_ok=True)
-            if(not os.path.isdir(PointsRoot)):
-                path = pathlib.Path(PointsRoot)
-                path.mkdir(parents=True, exist_ok=True)
+            if not os.path.isfile(imageFname): continue
 
             #outFname =  os.path.join(OutRoot,file.replace(".png",".npy"))
             non_pred_name = file.replace("_pred","")
-            videoFrame = os.path.join(self.imagesDir,TRIAL,non_pred_name)
+            videoFrame = os.path.join(self.imagesDir,non_pred_name)
             testFname = os.path.join(OutRoot,file)
             frameNumber = int(file.replace(".png","").split("_")[1])
             im = cv.imread(imageFname)
@@ -354,8 +359,8 @@ class Contour_Iterator:
                 M = cv.moments(cnt)
                 #print( M )
                 try:
-                    cx = int(M['m10']/M['m00'])
-                    cy = int(M['m01']/M['m00'])
+                    cx = int(M['m10']/(M['m00']+ 1e-5))
+                    cy = int(M['m01']/(M['m00']+ 1e-5))
                 except Exception as e:
                     print(e,"weird moment error")
                     continue
@@ -388,8 +393,6 @@ class Contour_Iterator:
             #rbg = tuple(int(colors[i].lstrip("#")[j:j+2], 16) for j in (0, 2, 4))
             #cv.drawContours(im,approx,0,rbg,thickness)
             
-            
-
             #Regions = [[X,Y],[X,Y]]
             VIA.addFrameMultiRegion(non_pred_name, fileSizeInBytes, Regions, RegionAttributes)
             #VIA.addRings(file, LabelClassName, PolyPointsY)
@@ -413,7 +416,7 @@ class Contour_Iterator:
             if DEBUG:
                 print("\tlen contours:",len(contours),'\n\t' + str(hierarchy).replace('\n', '\n\t'))
             #return
-            print(len(contours), end =" ")
+            #print(len(contours), end =" ")
         if SAVE_DATA:
             VIA.save(VIAOutput)
         return VIAOutput

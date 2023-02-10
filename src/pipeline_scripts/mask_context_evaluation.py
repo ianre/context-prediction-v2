@@ -9,11 +9,16 @@ from shapely.ops import unary_union
 import numpy as np
 import matplotlib.pyplot as plt
 from shapely.ops import polygonize
+from shapely.validation import make_valid
 import math
 from matplotlib.patches import Rectangle
 
 global Suturing_Needle_out_of_Tissue
 global Suturing_Needle_Right_of_Tissue
+global x_center_last,y_center_last
+x_center_last,y_center_last = 0,0
+global closestRingCenterX_last,closestRingCenterY_last
+closestRingCenterX_last,closestRingCenterY_last = 0,0
 Suturing_Needle_Right_of_Tissue = True
 Suturing_Needle_out_of_Tissue = False
 
@@ -23,6 +28,7 @@ class Context_Iterator:
         self.CWD = CDW   
         self.task = TASK
         self.imagesDir = os.path.join(self.CWD, "data", "images", TRIAL)
+        self.imagePredDir = os.path.join(self.CWD, "eval", "labeled_images",MASK_SET,TRIAL)
         self.cogitoDir = os.path.join(self.CWD, "data", "cogito_annotations")    
         #self.deeplabOutputDir= os.path.join(self.CWD,task,"2023_labeled_images_test")     
         self.ctxConsensusDir = os.path.join(self.CWD,"data","context_labels","consensus")
@@ -139,26 +145,28 @@ class Context_Iterator:
         #TrialRoot = os.path.join(self.imagesDir,TRIAL)
         contextLines = []
         ctxFName = os.path.join(self.ctxConsensusDir,TRIAL+".txt")
-        #ctxPredFName = os.path.join(self.context_output,TRIAL+"_"+str(EPOCH)+".txt") # maybe not to evaluate, rewrite if epoch ==0, otherwise juust apped
         ctxPredFName = os.path.join(self.ctxPredDir,TRIAL+".txt")
-        if(os.path.isfile(ctxPredFName) ):
-            os.remove(ctxPredFName)
-        
+        if(os.path.isfile(ctxPredFName)):
+            os.remove(ctxPredFName)        
         if(not os.path.isdir(self.ctxPredDir)):
             path = pathlib.Path(self.ctxPredDir)
+            path.mkdir(parents=True, exist_ok=True)
+
+        if(not os.path.isdir(self.imagePredDir)):
+            path = pathlib.Path(self.imagePredDir)
             path.mkdir(parents=True, exist_ok=True)
             
         frameNum = 0
         currentRing = 7
-        #for root, dirs, files in os.walk(TrialRoot):
         for file in FRAME_NUMS:
             frameNumber = int(file) # has to be a number to index into arrays
             file = "frame_"+file+".png"
             frameNum+=1
+            video_frame = os.path.join(self.imagesDir,file)
+            video_frame_prediction = os.path.join(self.imagePredDir,file)
             
             if "Suturing" in self.task: 
                 TissueClosestIndex = TissueFrames[TRIAL][0]
-                #frameNumber = 109
                 tfs = TissueFrames[TRIAL]
                 TissueClosestIndex = self.findClosestIndex(frameNumber,tfs)                    
                 TissuePoints = Tissues[TRIAL][str(TissueClosestIndex)]
@@ -271,7 +279,7 @@ class Context_Iterator:
 
                 contextLines.append(ctxPredLine)
                 #print(TRIAL,frameNumber,ctxPredLine)
-                #self.DrawSingleImageContextNP(pred, gt, ringShapes, ringShapes_gt, needleShape, needleShape_gt,GrasperJawPoints,imageFName,outputFName,CtxI,ctxPredLine,frameNumber,L_Gripping,R_Gripping,LG_inter_T, RG_inter_T,messages,GT=False)
+                self.DrawSingleImageContextNP(pred, gt, ringShapes, ringShapes_gt, needleShape, needleShape_gt,GrasperJawPoints,video_frame,video_frame_prediction,CtxI,ctxPredLine,frameNumber,L_Gripping,R_Gripping,LG_inter_T, RG_inter_T,messages,GT=False)
             if("Suturing" in self.task):              
                 needleShape, needleShape_gt = self.GetNeedleShapes(NeedlePoints,gtPolygons)                        
                 # gt_bisector is the distance 
@@ -286,217 +294,16 @@ class Context_Iterator:
                 #messages.append("LJ Dist:"+"{:.2f}".format(L_Dist) + str(L_Gripping))
                 #messages.append("RJ Dist:"+"{:.2f}".format(R_Dist)+ str(R_Gripping))
                 #messages.append("D(LG,T)"+"{:.2f}".format(LG_inter_T))
-                #messages.append("D(RG,T):"+"{:.2f}".format(RG_inter_T))                        
+                #messages.append("D(RG,T):"+"{:.2f}".format(RG_inter_T))
 
                 contextLines.append(ctxPredLine)
                 #print(Trial,frameNumber,ctxPredLine)
-                #self.DrawSingleImageContextS(pred, gt,needleShape,needleShape_gt,GrasperJawPoints,imageFName,outputFName,CtxI,ctxPredLine,frameNumber,L_Gripping,R_Gripping,LG_inter_T, RG_inter_T,messages)
+                self.DrawSingleImageContextS(pred, gt,needleShape,needleShape_gt,GrasperJawPoints,video_frame,video_frame_prediction,CtxI,ctxPredLine,frameNumber,L_Gripping,R_Gripping,LG_inter_T, RG_inter_T,messages)
             count += 1
 
         if(len(contextLines) > 2 and SAVE):
             utils.saveAppend(ctxPredFName,contextLines)
 
-    def GenerateContext(self, BATCH_SIZE, EPOCH,TRIAL, FRAME_NUMS,label_classes, label_classNames,ContourFiles, RingFile, SAVE=False):
-        count = 0
-        #VIA is a labeling app we used to manually annotate Tissue points and Grasper Ends  
-        # [Knot_Tying_S01_T01]["100"] = [Points]
-        DeeplabVIAPoints = {}
-        DeeplabVIAFrames = {}
-        DeeplabVIARings = {}
-        
-        Tissues, TissueFrames = self.getTissueData(TRIAL) # tissue points 
-        GrasperJaws, GrasperFrames = self.getGrasperJawData(TRIAL) # grasper points
-        DeeplabVIAPoints, DeeplabVIAFrames, DeeplabVIARings  = self.getContourData(ContourFiles,RingFile,label_classes,label_classNames) # We process the output of contours.py here
-
-        # at this point, you should have all of the contour and VIA labels (grasper jaw, tissue points)       
-        # FRAME_NUMS: These are all the trial we'll generate context labels for. We get this list from the images folder
-       
-        #print("Trials:",FRAME_NUMS)
-        TrialRoot = os.path.join(self.imagesDir,TRIAL)        
-        imageRoot = TrialRoot
-        contextLines = []
-        ctxFName = os.path.join(self.ctxConsensusDir,TRIAL+".txt")
-        #ctxPredFName = os.path.join(self.context_output,TRIAL+"_"+str(EPOCH)+".txt") # maybe not to evaluate, rewrite if epoch ==0, otherwise juust apped
-        ctxPredFName = os.path.join(self.context_output,TRIAL+".txt")
-        if(os.path.isfile(ctxPredFName) and EPOCH == 0):
-            os.remove(ctxPredFName) 
-            
-        frameNum = 0
-        currentRing = 7
-        #for root, dirs, files in os.walk(TrialRoot):
-        for file in FRAME_NUMS:
-            frameNumber = int(file) # has to be a number to index into arrays
-            file = "frame_"+file+".png"
-            if "frame" not in file:
-                continue
-            frameNum+=1
-            imageFName = os.path.join(imageRoot, file)
-            cogitoRoot = TrialRoot.replace("images","annotations")                
-            cogitoFName = os.path.join(cogitoRoot, utils.imageToJSON(file))
-            outputRoot =  os.path.join(self.deeplabOutputDir,TRIAL)
-            outputFName = os.path.join(self.deeplabOutputDir,TRIAL, file)
-            
-            closestIndex = -1
-            if "Suturing" in self.task: 
-                TissueClosestIndex = TissueFrames[TRIAL][0]
-                #frameNumber = 109
-                tfs = TissueFrames[TRIAL]
-                TissueClosestIndex = self.findClosestIndex(frameNumber,tfs)                    
-                TissuePoints = Tissues[TRIAL][str(TissueClosestIndex)]
-                GrasperJawPoints = GrasperJaws[TRIAL][str(TissueClosestIndex)]
-                closestIndex = TissueClosestIndex
-                #print("Drawing Segmentation labels and Keypoints:", os.path.basename(root),file)
-            else:
-                gfs = GrasperFrames[TRIAL]
-                GrasperClosestIndex = self.findClosestIndex(frameNumber,gfs)              
-                GrasperJawPoints = GrasperJaws[TRIAL][str(GrasperClosestIndex)]
-                closestIndex = GrasperClosestIndex
-            
-            # All _dl_points contains the contours that are applicable for this Task and Trial combo                    
-            All_dl_points = DeeplabVIAPoints[TRIAL] #["class"]["frame"] = list of points
-            if "Needle" in self.task:
-                All_ring_points = DeeplabVIARings[TRIAL]
-                try:
-                    Ring4Points = All_ring_points["Ring_4"][str(frameNumber)]
-                    Ring5Points = All_ring_points["Ring_5"][str(frameNumber)]
-                    Ring6Points = All_ring_points["Ring_6"][str(frameNumber)]
-                    Ring7Points = All_ring_points["Ring_7"][str(frameNumber)]
-                except Exception as e:
-                    print(e,"in RingPoints")
-                    Ring4Points = {}
-                    Ring5Points = {}
-                    Ring6Points = {}
-                    Ring7Points = {}
-
-            
-            threadRoot = TrialRoot.replace("images","2023_thread_masks")
-            annotationRoot = TrialRoot.replace("images","annotations")
-
-            threadMaskImage = os.path.join(threadRoot, file)
-            annotationFile = os.path.join(annotationRoot, utils.imageToJSON(file))
-
-            # Getting particular contours (array of points)
-            try:
-                LgrasperPoints = All_dl_points["2023_grasper_L"][str(frameNumber)]
-            except Exception as e:
-                #print(e,"in LgrasperPoints") # missing mask
-                LgrasperPoints = {}
-
-            try:
-                RgrasperPoints = All_dl_points["2023_grasper_R"][str(frameNumber)]
-            except Exception as e:
-                #print(e,"in RgrasperPoints")  # missing mask
-                RgrasperPoints = {}
-
-            if "Needle" in self.task or "Suturing" in self.task:
-                try:                        
-                    NeedlePoints = All_dl_points["2023_needle"][str(frameNumber)]
-                except Exception as e:
-                    #print(e,"in NeedlePoints")  # missing mask
-                    NeedlePoints = {}
-
-            CtxI = utils.ContextInterface2(ctxFName)
-            J = utils.JSONInterface(annotationFile)
-
-            # gtPolygons are Ground Truth contour points for the cogito labels
-            gtPolygons = J.getPolygonsDict(); # graspers only in KT, 
-
-            # gtKeypoints are Ground Truth points from cogito labels
-            gtKeypoints = J.getKeyPointsDict(); # None in KT,
-            cn,polylineSeries = J.getPolyLines();
-            SingleThreadX = []
-            SingleThreadY = []
-            for i in range(len(polylineSeries)):
-                l = len(polylineSeries)
-                for j in range(0,len(polylineSeries[i]),2):
-                    SingleThreadX.append(polylineSeries[i][j])
-                    SingleThreadY.append(polylineSeries[i][j+1])
-            SingleThreadPoints = [(SingleThreadX[i],SingleThreadY[i]) for i in range(len(SingleThreadX))]
-
-            TContours = self.getThreadContours(threadMaskImage)
-            ThreadContours = []
-            minArea = 80
-            for k in range(len(TContours)):                    
-                cnt = TContours[k]
-                area = cv.contourArea(cnt)
-                if area >= minArea:
-                    ThreadContours.append(cnt)
-
-
-            # Getting grasper open/closed from grasper points
-            L_Gripping, R_Gripping, L_Dist,R_Dist, Grasper_DistX = self.processGrasperData(GrasperJawPoints)                    
-
-            if(not os.path.isdir(outputRoot)):
-                path = pathlib.Path(outputRoot)
-                path.mkdir(parents=True, exist_ok=True)
-                
-            # pred has all of the polygons from Zoey's masks
-            # gt has all of the polygons from cogito
-            pred, gt = self.GetCommonShapes(gtPolygons,gtKeypoints,SingleThreadPoints,polylineSeries,ThreadContours,LgrasperPoints,RgrasperPoints)
-
-            # maskify Thread
-            if("Knot" in self.task):
-                #pred, gt = self.GetKTShapes(gtPolygons,gtKeypoints,SingleThreadPoints,ThreadContours,LgrasperPoints,RgrasperPoints)     
-                
-                #dev                    
-                ctxPredLine, LG_inter_T, RG_inter_T = self.GenerateContextLineKT(pred, gt ,L_Gripping,R_Gripping,frameNumber,contextLines,Grasper_DistX)    
-
-                #GT                    
-                #ctxPredLine, LG_inter_T, RG_inter_T = self.GenerateContextLineKT(gt,pred, L_Gripping,R_Gripping,frameNumber,contextLines,Grasper_DistX)                         
-                
-                contextLines.append(ctxPredLine)
-                #print(Trial,frameNumber,ctxPredLine)
-                #self.DrawSingleImageContextKT(pred, gt,GrasperJawPoints,imageFName,outputFName,CtxI,ctxPredLine,frameNumber,L_Gripping,R_Gripping,LG_inter_T, RG_inter_T)
-            
-            if("Needle" in self.task):
-                #pred, gt = self.GetCommonShapes(gtPolygons,gtKeypoints,SingleThreadPoints,ThreadContours,LgrasperPoints,RgrasperPoints)
-                ringShapes, ringShapes_gt = self.GetRingShapes(Ring4Points,Ring5Points,Ring6Points,Ring7Points,gtPolygons)
-                needleShape, needleShape_gt = self.GetNeedleShapes(NeedlePoints,gtPolygons)
-                #gt, pred, ringShapes_gt, ringShapes, needleShape_gt, needleShape -> GT Test
-                #ctxPredLine, LG_inter_T, RG_inter_T,messages = "",0,0,[]                    # this causes list error, switching gt with pred
-                
-                #pred, gt, ringShapes, ringShapes_gt, needleShape, needleShape_gt -> dev
-                ctxPredLine, LG_inter_T, RG_inter_T,messages = self.GenerateContextLineNP(pred, gt, ringShapes, ringShapes_gt, needleShape, needleShape_gt, L_Gripping,R_Gripping,frameNumber,contextLines,Grasper_DistX,currentRing)                        
-                #gt, pred, ringShapes_gt, ringShapes, needleShape_gt, needleShape -> GT Test 
-                #ctxPredLine, LG_inter_T, RG_inter_T,messages = self.GenerateContextLineNP(gt, pred, ringShapes_gt, ringShapes, needleShape_gt, needleShape, L_Gripping,R_Gripping,frameNumber,contextLines,Grasper_DistX,currentRing)
-
-                contextLines.append(ctxPredLine)
-                #print(TRIAL,frameNumber,ctxPredLine)
-                #self.DrawSingleImageContextNP(pred, gt, ringShapes, ringShapes_gt, needleShape, needleShape_gt,GrasperJawPoints,imageFName,outputFName,CtxI,ctxPredLine,frameNumber,L_Gripping,R_Gripping,LG_inter_T, RG_inter_T,messages,GT=False)
-            if("Suturing" in self.task):              
-                needleShape, needleShape_gt = self.GetNeedleShapes(NeedlePoints,gtPolygons)                        
-                # gt_bisector is the distance 
-                gt_bisector, gt_tissue, pred_bisector, pred_tissue,Bisector = self.GetTissueDist(TissuePoints,needleShape, needleShape_gt) 
-
-                # Predicted comparison
-                ctxPredLine, LG_inter_T, RG_inter_T,messages = self.GenerateContextLineS(pred, gt ,needleShape,needleShape_gt ,L_Gripping,R_Gripping,frameNumber,contextLines,gt_bisector, gt_tissue, pred_bisector, pred_tissue,Bisector)
-                
-                # Ground Truth comparison
-                # ctxPredLine, LG_inter_T, RG_inter_T,messages = self.GenerateContextLineS(gt, pred, needleShape_gt, needleShape, L_Gripping,R_Gripping,frameNumber,contextLines,gt_bisector, gt_tissue, pred_bisector, pred_tissue,Bisector)
-                                        
-                #messages.append("LJ Dist:"+"{:.2f}".format(L_Dist) + str(L_Gripping))
-                #messages.append("RJ Dist:"+"{:.2f}".format(R_Dist)+ str(R_Gripping))
-                #messages.append("D(LG,T)"+"{:.2f}".format(LG_inter_T))
-                #messages.append("D(RG,T):"+"{:.2f}".format(RG_inter_T))                        
-
-                contextLines.append(ctxPredLine)
-                #print(Trial,frameNumber,ctxPredLine)
-                #self.DrawSingleImageContextS(pred, gt,needleShape,needleShape_gt,GrasperJawPoints,imageFName,outputFName,CtxI,ctxPredLine,frameNumber,L_Gripping,R_Gripping,LG_inter_T, RG_inter_T,messages)
-            count += 1
-
-        
-        
-        print("\t '%' proc",os.path.basename(TrialRoot),"count:",frameNum)
-        if(len(contextLines) > 2 and SAVE):                
-            #print("saving",ctxPredFName)
-            count+=1
-            outdir = os.path.abspath(ctxPredFName + "/../")
-            if(not os.path.isdir(outdir)):
-                path = pathlib.Path(outdir)
-                path.mkdir(parents=True, exist_ok=True)
-            utils.saveAppend(ctxPredFName,contextLines)
-        #print(count,"images processed!")
-        
     def getThreadContours(self,threadMaskImage):
         im = cv.imread(threadMaskImage)
         imgray = cv.cvtColor(im,cv.COLOR_RGB2GRAY,0)
@@ -540,27 +347,6 @@ class Context_Iterator:
         c4 = Points[-1]
 
         return [(c1[0]+c2[0])/2,(c1[1]+c2[1])/2],[(c3[0]+c4[0])/2,(c3[1]+c4[1])/2] 
-
-    def ccw(self,A,B,C):
-        return (C[1]-A[1]) * (B[0]-A[0]) > (B[1]-A[1]) * (C[0]-A[0])
-
-    def contour_intersect(self,cnt_ref,cnt_query):
-        # Contour is a list of points
-        # Connect each point to the following point to get a line
-        # If any of the lines intersect, then break
-        for ref_idx in range(len(cnt_ref)-1):
-            # Create reference line_ref with point AB
-            A = cnt_ref[ref_idx][0]
-            B = cnt_ref[ref_idx+1][0]         
-            for query_idx in range(len(cnt_query)-1):
-                # Create query line_query with point CD
-                C = cnt_query[query_idx][0]
-                D = cnt_query[query_idx+1][0]            
-                # Check if line intersect
-                if self.ccw(A,C,D) != self.ccw(B,C,D) and self.ccw(A,B,C) != self.ccw(A,B,D):
-                    # If true, break loop earlier
-                    return True
-        return False
 
     def processGrasperData(self,GrasperJawPoints):
         try:
@@ -663,49 +449,54 @@ class Context_Iterator:
             else: 
                 RG_dist_T = 100
            
-            try:
-                if not isinstance(needleShape,list):
-                    LG_dist_N =  min([LG_dl.distance(shape) for shape in needleShape.geoms if not isinstance(needleShape,list)] )
-                    RG_dist_N =  min([RG_dl.distance(shape) for shape in needleShape.geoms if not isinstance(needleShape,list)] )
+            
+            if not isinstance(needleShape,list):
+                LG_dist_N =  min([LG_dl.distance(shape) for shape in needleShape.geoms ] )
+                RG_dist_N =  min([RG_dl.distance(shape) for shape in needleShape.geoms] )
 
-                    RG_inter_N =  max([LG_dl.intersection(shape).area for shape in needleShape.geoms if not isinstance(needleShape,list)] )
-                    LG_inter_N =  max( [RG_dl.intersection(shape).area for shape in needleShape.geoms if not isinstance(needleShape,list)] ) 
-                    N_inter_TS = pred_tissue < 2 
-                    scaleF = 1
-                    messages.append("LG Hold\Contact")
-                    messages.append("D(LG,N):"+"{:.2f}".format(LG_dist_N/scaleF))
-                    messages.append("D(LG,T):"+"{:.2f}".format(LG_dist_T))
-                    messages.append("Inter(LG,N):"+"{:.2f}".format(RG_inter_N/scaleF))
-                    messages.append("α:"+str(not(L_Gripping)))
-                    messages.append("")
+                try:
+                    RG_inter_N =  max([LG_dl.intersection(make_valid(shape)).area for shape in needleShape.geoms] )
+                    LG_inter_N =  max([RG_dl.intersection(make_valid(shape)).area for shape in needleShape.geoms] ) 
+                except Exception as e:
+                    #RG_inter_N =  max([LG_dl.intersection(make_valid(shape)).area for shape in needleShape.geoms] )
+                    #LG_inter_N =  max([RG_dl.intersection(make_valid(shape)).area for shape in needleShape.geoms] ) 
+                    print(e,"could not load a shape in GenerateContextLineS")
+                    #messages.append("missing contour")
+                    #Faulty = True
+
+                N_inter_TS = pred_tissue < 2 
+                scaleF = 1
+                messages.append("LG Hold\Contact")
+                messages.append("D(LG,N):"+"{:.2f}".format(LG_dist_N/scaleF))
+                messages.append("D(LG,T):"+"{:.2f}".format(LG_dist_T))
+                messages.append("Inter(LG,N):"+"{:.2f}".format(RG_inter_N/scaleF))
+                messages.append("α:"+str(not(L_Gripping)))
+                messages.append("")
 
 
-                    messages.append("RG Hold\Contact")
-                    messages.append("D(RN,N):"+"{:.2f}".format(RG_dist_N/scaleF))
-                    messages.append("D(RG,T):"+"{:.2f}".format(RG_dist_T))
-                    messages.append("Inter(RG,N):"+"{:.2f}".format(LG_inter_N/scaleF))
-                    messages.append("α:"+str(not(R_Gripping)))
-                    messages.append("")
+                messages.append("RG Hold\Contact")
+                messages.append("D(RN,N):"+"{:.2f}".format(RG_dist_N/scaleF))
+                messages.append("D(RG,T):"+"{:.2f}".format(RG_dist_T))
+                messages.append("Inter(RG,N):"+"{:.2f}".format(LG_inter_N/scaleF))
+                messages.append("α:"+str(not(R_Gripping)))
+                messages.append("")
 
-                    messages.append("Needle State")
-                    messages.append("D(N,Ts):"+"{:.2f}".format(pred_tissue/scaleF))
-                    #messages.append("N to Bisector"+"{:.2f}".format(pred_bisector))
+                messages.append("Needle State")
+                messages.append("D(N,Ts):"+"{:.2f}".format(pred_tissue/scaleF))
+                #messages.append("N to Bisector"+"{:.2f}".format(pred_bisector))
 
-                    bi_x,bi_y = Bisector.centroid.x,Bisector.centroid.y
-                    n_x,n_y = needleShape.geoms[0].centroid.x,needleShape.geoms[0].centroid.y
-                    #messages.append("D(N,Ts)"+"{:.2f}".format(pred_tissue))
-                    messages.append("N.x:"+"{:.2f}   ".format(n_x))
-                    messages.append("Ts.x:"+"{:.2f}   ".format(bi_x))
-                    messages.append("N.x<Ts.x:"+str(n_x<bi_x))
-                else:
-                    Faulty = True
-                #RingDistances_N = [ min([needleShape.distance(shape) for shape in R_GROUP.geoms if not isinstance(needleShape,list) ])  for R_GROUP in ringShapes if not isinstance(R_GROUP,list)] if ringShapes != [] else []
-                #RingInter_N =  [ max([needleShape.intersection(shape).area for shape in R_GROUP.geoms if not isinstance(needleShape,list)])  for R_GROUP in ringShapes  if not isinstance(R_GROUP,list)] if ringShapes != [] else []
-                
-            except Exception as e:
-                print(e,"could not load a shape in GenerateContextLineS")
-                messages.append("missing contour")
+                bi_x,bi_y = Bisector.centroid.x,Bisector.centroid.y
+                n_x,n_y = needleShape.geoms[0].centroid.x,needleShape.geoms[0].centroid.y
+                #messages.append("D(N,Ts)"+"{:.2f}".format(pred_tissue))
+                messages.append("N.x:"+"{:.2f}   ".format(n_x))
+                messages.append("Ts.x:"+"{:.2f}   ".format(bi_x))
+                messages.append("N.x<Ts.x:"+str(n_x<bi_x))
+            else:
                 Faulty = True
+            #RingDistances_N = [ min([needleShape.distance(shape) for shape in R_GROUP.geoms if not isinstance(needleShape,list) ])  for R_GROUP in ringShapes if not isinstance(R_GROUP,list)] if ringShapes != [] else []
+            #RingInter_N =  [ max([needleShape.intersection(shape).area for shape in R_GROUP.geoms if not isinstance(needleShape,list)])  for R_GROUP in ringShapes  if not isinstance(R_GROUP,list)] if ringShapes != [] else []
+                
+            
 
         # This is where we put the predicted context states
         L_G_Touch = 0
@@ -811,7 +602,7 @@ class Context_Iterator:
             RingDistances_R = [ min([RG_dl.distance(shape) for shape in R_GROUP ])  for R_GROUP in ringShapes_gt]
         else:            
             LG_inter_T = LG_dl.distance(T_dl) if not isinstance(LG_dl,list) else 20
-            RG_inter_T = RG_dl.distance(T_dl) if not isinstance(RG_dl,list) else 20   
+            RG_inter_T = RG_dl.distance(T_dl) if not isinstance(RG_dl,list) else 20
 
             if not isinstance(LG_dl,list) :
                 if len(LG_dl.geoms) > 0:
@@ -821,27 +612,36 @@ class Context_Iterator:
 
             try:
                 RingDistances_L = [ min([LG_dl.distance(shape) for shape in R_GROUP.geoms if not isinstance(LG_dl,list)])  for R_GROUP in ringShapes if not isinstance(R_GROUP,list) ] if ringShapes != [] else []
-
                 RingDistances_R = [ min([RG_dl.distance(shape) for shape in R_GROUP.geoms if not isinstance(RG_dl,list) ])  for R_GROUP in ringShapes if not isinstance(R_GROUP,list) ] if ringShapes != [] else []  
                 RingDistances_N = []
                 absMinDistN = 10000
                 ringID = -1
                 for i in range(len(ringShapes)):
                     R_GROUP = ringShapes[i]
-                    if not isinstance(R_GROUP,list):
+                    if not isinstance(R_GROUP,list) and not isinstance(needleShape,list):
                         currMin = min([needleShape.distance(shape) for shape in R_GROUP.geoms ])
                         RingDistances_N.append(currMin)
                         if currMin < absMinDistN:
                             ringID = i
                             absMinDistN = currMin
                 #closestRingCenterX,closestRingCenterY = ringShapes[ringID].geoms[0].centroid.x,ringShapes[ringID].geoms[0].centroid.x,
-                closestRingCenterX,closestRingCenterY = ringShapes[ringID].centroid.x,ringShapes[ringID].centroid.y
+                global closestRingCenterX_last,closestRingCenterY_last
+                if isinstance(ringShapes[ringID],list):
+                    closestRingCenterX,closestRingCenterY = closestRingCenterX_last,closestRingCenterY_last
+                else:
+                    closestRingCenterX,closestRingCenterY = ringShapes[ringID].centroid.x,ringShapes[ringID].centroid.y
+                    closestRingCenterX_last,closestRingCenterY_last = closestRingCenterX,closestRingCenterY
                 
-                RingXCoors = [ np.average([ shape.centroid.x for shape in R_GROUP.geoms ]) for R_GROUP in ringShapes ] if ringShapes != [] else []
 
+                RingXCoors = [ np.average([ shape.centroid.x for shape in R_GROUP.geoms ]) for R_GROUP in ringShapes if( not isinstance(R_GROUP,list)) ] if ringShapes != [] else []
 
-                RingDistances_N = [ min([needleShape.distance(shape) for shape in R_GROUP.geoms if not isinstance(needleShape,list) ])  for R_GROUP in ringShapes if not isinstance(R_GROUP,list)] if ringShapes != [] else []
-                RingInter_N =  [ max([needleShape.intersection(shape).area for shape in R_GROUP.geoms if not isinstance(needleShape,list)])  for R_GROUP in ringShapes  if not isinstance(R_GROUP,list)] if ringShapes != [] else []
+                if isinstance(needleShape,list):
+                    RingDistances_N = [100]
+                    RingInter_N = [0]
+                else:
+                    needleShape = make_valid(needleShape)
+                    RingDistances_N = [min([needleShape.distance(make_valid(shape)) for shape in R_GROUP.geoms])  for R_GROUP in ringShapes  if( not isinstance(R_GROUP,list))] 
+                    RingInter_N =  [ max([needleShape.intersection(make_valid(shape)).area for shape in R_GROUP.geoms])  for R_GROUP in ringShapes  if( not isinstance(R_GROUP,list))]
                 minLRing = min(RingDistances_L)
                 minRRing = min(RingDistances_R)
                 minNRing = min(RingDistances_N)
@@ -850,7 +650,12 @@ class Context_Iterator:
                 messages.append("Min R Ring:"+"{:.2f}".format(minRRing))
                 messages.append("Min N Ring:"+"{:.2f}".format(minNRing))
                 messages.append("Max RN Inter:"+"{:.2f}".format(maxInter_RN))
-                x_center,y_center = needleShape.centroid.x,needleShape.centroid.y
+                global x_center_last,y_center_last
+                if isinstance(needleShape,list):
+                    x_center,y_center = x_center_last,y_center_last
+                else:
+                    x_center,y_center = needleShape.centroid.x,needleShape.centroid.y
+                    x_center_last,y_center_last = x_center,y_center
 
 
                 dists = [ abs(x_center-p) for p in RingXCoors]
@@ -862,6 +667,9 @@ class Context_Iterator:
                 
             except Exception as e:
                 print(e,"could not load a shape in GenerateContextLineNP")
+                exc_type, exc_obj, exc_tb = sys.exc_info()
+                fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+                print(exc_type, fname, exc_tb.tb_lineno)
                 messages.append("missing contour")
                 Faulty = True
 
@@ -986,7 +794,7 @@ class Context_Iterator:
             if not isinstance(LG_dl,list) :
                 LG_inter_T = LG_dl.distance(T_dl)
             else:
-                LG_inter_T = 100            
+                LG_inter_T = 100
             #P1 = LG_dl.centroid
             #P2 = RG_dl.centroid
             #Grasper_DistX = P1.distance(P2)
@@ -1019,8 +827,7 @@ class Context_Iterator:
             last = last5thState(contextLines[-1])
             if last == "0" and Grasper_DistX < 0:                
                 Extra_State = 1 #+wrapped
-            elif last == "1" and Grasper_DistX > 130:
-                                  
+            elif last == "1" and Grasper_DistX > 130:                                  
                 Extra_State = 2 # lose
             elif last == "1":
                     Extra_State = 1
@@ -1065,7 +872,7 @@ class Context_Iterator:
             #x,y = unary_union(LG_dl).exterior.xy
             #plt.plot(x,y)                
         except Exception as e:
-            print(e,"No LG DL label")
+            print(e,"No LG DL label: DrawSingleImageContextNP")
         try:
             for s in RG_dl.geoms:
                 x,y = s.exterior.xy
@@ -1075,14 +882,15 @@ class Context_Iterator:
         except Exception as e:
             print(e,"No RG DL label") 
         
-        try:
+        
+        if not isinstance(needleShape,list): 
             for s in needleShape.geoms:
                 x,y = s.exterior.xy
                 plt.plot(x,y,color='red',linewidth=1)
-            #x,y = unary_union(RG_dl).exterior.xy
-            #plt.plot(x,y)
-        except Exception as e:
-            print(e,"No N DL label") 
+        #x,y = unary_union(RG_dl).exterior.xy
+        #plt.plot(x,y)
+        #except Exception as e:
+        #    print(e,"No N DL label") 
         '''
         for ns in needleShape:           
 
@@ -1095,16 +903,28 @@ class Context_Iterator:
         '''
 
         for ringGoup in ringShapes:
-            for rs in ringGoup:
-                #if not isinstance(rs,list):
-                try:
-                    x,y = unary_union(rs).exterior.xy
-                    #plt.plot(rs.centroid.x,rs.centroid.y)
-                    #plt.circle((rs.centroid.x,rs.centroid.y),1,color='g')
-                    plt.plot( rs.centroid.x,rs.centroid.y, ls=' ', marker='o', markersize=5, color='r' )
-                    plt.plot(x,y)
-                except Exception as e:
-                    print(e,"No Ring label")
+            if isinstance(ringGoup,list):
+                for rs in ringGoup:
+                    #if not isinstance(rs,list):
+                    try:
+                        x,y = unary_union(rs).exterior.xy
+                        #plt.plot(rs.centroid.x,rs.centroid.y)
+                        #plt.circle((rs.centroid.x,rs.centroid.y),1,color='g')
+                        plt.plot( rs.centroid.x,rs.centroid.y, ls=' ', marker='o', markersize=5, color='r' )
+                        plt.plot(x,y)
+                    except Exception as e:
+                        print(e,"No Ring label")
+            else: 
+                for rs in ringGoup.geoms:
+                    #if not isinstance(rs,list):
+                    try:
+                        x,y = unary_union(rs).exterior.xy
+                        #plt.plot(rs.centroid.x,rs.centroid.y)
+                        #plt.circle((rs.centroid.x,rs.centroid.y),1,color='g')
+                        plt.plot( rs.centroid.x,rs.centroid.y, ls=' ', marker='o', markersize=5, color='r' )
+                        plt.plot(x,y)
+                    except Exception as e:
+                        print(e,"No Ring label")
 
         
         #unaryThread = unary_union(T_dl.geoms)
@@ -1136,8 +956,7 @@ class Context_Iterator:
     def DrawSingleImageContextS(self,pred, gt,needleShape,needleShape_gt,GrasperJawPoints,imageFName,outputFName,CtxI,ctxPredLine,frameNumber,L_Gripping,R_Gripping,LG_inter_T, RG_inter_T,messages,GT=False):
         [LG_dl,RG_dl,T_dl] = pred
         [LG_Group_gt,RG_Group_gt,T_Group_gt] = gt
-        image = cv.imread(imageFName)
-        
+        image = cv.imread(imageFName)        
         #atual
         plt.imshow(image, cmap='gray') 
         
@@ -1146,7 +965,7 @@ class Context_Iterator:
         #img_3.fill(255)
         #plt.imshow(img_3, cmap='gray') 
 
-        if GT:        
+        if GT:
             try:
                 x,y = unary_union(LG_Group_gt).exterior.xy
                 plt.plot(x,y)                
@@ -1166,23 +985,26 @@ class Context_Iterator:
             except Exception as e:
                 print(e,"probably no thread GT annotation")
     
-
         scale = 1
-        linewidth = 1
-        try:
-            x,y = unary_union(LG_dl).exterior.xy
-            x = [xx*scale for xx in x]
-            y = [yy*scale for yy in y]
-            plt.plot(x,y,color="green",linewidth=linewidth)                
-        except Exception as e:
-            print(e,"No LG DL label")
-        try:
-            x,y = unary_union(RG_dl).exterior.xy
-            x = [xx*scale for xx in x]
-            y = [yy*scale for yy in y]
-            plt.plot(x,y,color="gold",linewidth=linewidth)
-        except Exception as e:
-            print(e,"No RG DL label") 
+        linewidth = 1        
+
+        for g in LG_dl.geoms:
+            try:
+                x,y = unary_union(g).exterior.xy
+                x = [xx*scale for xx in x]
+                y = [yy*scale for yy in y]
+                plt.plot(x,y,color="green",linewidth=linewidth)
+            except Exception as e:
+                print(e,"No LG DL label: DrawSingleImageContextS")
+
+        for g in RG_dl.geoms:
+            try:
+                x,y = unary_union(g).exterior.xy
+                x = [xx*scale for xx in x]
+                y = [yy*scale for yy in y]
+                plt.plot(x,y,color="gold",linewidth=linewidth)
+            except Exception as e:
+                print(e,"No RG DL label") 
 
         if not isinstance(needleShape,list):
             for ns in needleShape.geoms:
@@ -1294,7 +1116,7 @@ class Context_Iterator:
             x,y = unary_union(LG_dl).exterior.xy
             plt.plot(x,y)                
         except Exception as e:
-            print(e,"No LG DL label")
+            print(e,"No LG DL label : DrawSingleImageContextKT")
         try:
             x,y = unary_union(RG_dl).exterior.xy
             plt.plot(x,y)
@@ -1421,8 +1243,11 @@ class Context_Iterator:
         return [R4_Group,R5_Group,R6_Group,R7_Group],[R4_Group_gt,R5_Group_gt,R6_Group_gt,R7_Group_gt]
 
     def GetNeedleShapes(self,NeedlePoints,gtPolygons):
-        
-        N_dl =  geo.MultiPolygon([ geo.Polygon(poly) for poly in NeedlePoints if len(poly)> 3 ]) if len(NeedlePoints)>0 else []
+        if len(NeedlePoints)>0:
+            N_dl =  geo.MultiPolygon([ geo.Polygon(poly) for poly in NeedlePoints if len(poly)> 3 ])
+        else:
+            #print("===> No needle points")
+            N_dl = []
         #print(len(NeedlePoints))
         Ring_Group_gt = geo.MultiPolygon([ geo.Polygon( [ (poly[i],poly[i+1]) for i in range(0,len(poly),2)] ) for poly in gtPolygons["Needle Mask"]]) if "Needle Mask" in gtPolygons.keys() else []
         
