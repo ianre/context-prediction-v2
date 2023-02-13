@@ -152,7 +152,7 @@ class Contour_Iterator:
                 cnt = contours[origIndex]                        
                 X = []
                 Y = []
-                epsilon = 0.01*cv.arcLength(cnt,True) #0.01 smaller number for less smoothing
+                epsilon = 0.1*cv.arcLength(cnt,True) #0.01 smaller number for less smoothing
                 approx = cv.approxPolyDP(cnt,epsilon,True)
                 pts = []
                 for points in approx:

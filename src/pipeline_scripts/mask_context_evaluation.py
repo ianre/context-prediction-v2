@@ -16,7 +16,13 @@ from matplotlib.patches import Rectangle
 global Suturing_Needle_out_of_Tissue
 global Suturing_Needle_Right_of_Tissue
 global x_center_last,y_center_last
+global LG_dist_N_last,RG_dist_N_last
+global LG_inter_N_last,RG_inter_N_last
+global bi_x_last, n_x_last
+LG_dist_N_last,RG_dist_N_last = 0,0
 x_center_last,y_center_last = 0,0
+LG_inter_N_last,RG_inter_N_last = 0,0
+bi_x_last, n_x_last =0,0
 global closestRingCenterX_last,closestRingCenterY_last
 closestRingCenterX_last,closestRingCenterY_last = 0,0
 Suturing_Needle_Right_of_Tissue = True
@@ -263,7 +269,7 @@ class Context_Iterator:
                 
                 contextLines.append(ctxPredLine)
                 #print(Trial,frameNumber,ctxPredLine)
-                #self.DrawSingleImageContextKT(pred, gt,GrasperJawPoints,imageFName,outputFName,CtxI,ctxPredLine,frameNumber,L_Gripping,R_Gripping,LG_inter_T, RG_inter_T)
+                #self.DrawSingleImageContextKT(pred, gt,GrasperJawPoints,video_frame,video_frame_prediction,CtxI,ctxPredLine,frameNumber,L_Gripping,R_Gripping,LG_inter_T, RG_inter_T)
             
             if("Needle" in self.task):
                 #pred, gt = self.GetCommonShapes(gtPolygons,gtKeypoints,SingleThreadPoints,ThreadContours,LgrasperPoints,RgrasperPoints)
@@ -279,7 +285,7 @@ class Context_Iterator:
 
                 contextLines.append(ctxPredLine)
                 #print(TRIAL,frameNumber,ctxPredLine)
-                self.DrawSingleImageContextNP(pred, gt, ringShapes, ringShapes_gt, needleShape, needleShape_gt,GrasperJawPoints,video_frame,video_frame_prediction,CtxI,ctxPredLine,frameNumber,L_Gripping,R_Gripping,LG_inter_T, RG_inter_T,messages,GT=False)
+                #self.DrawSingleImageContextNP(pred, gt, ringShapes, ringShapes_gt, needleShape, needleShape_gt,GrasperJawPoints,video_frame,video_frame_prediction,CtxI,ctxPredLine,frameNumber,L_Gripping,R_Gripping,LG_inter_T, RG_inter_T,messages,GT=False)
             if("Suturing" in self.task):              
                 needleShape, needleShape_gt = self.GetNeedleShapes(NeedlePoints,gtPolygons)                        
                 # gt_bisector is the distance 
@@ -298,7 +304,7 @@ class Context_Iterator:
 
                 contextLines.append(ctxPredLine)
                 #print(Trial,frameNumber,ctxPredLine)
-                self.DrawSingleImageContextS(pred, gt,needleShape,needleShape_gt,GrasperJawPoints,video_frame,video_frame_prediction,CtxI,ctxPredLine,frameNumber,L_Gripping,R_Gripping,LG_inter_T, RG_inter_T,messages)
+                #self.DrawSingleImageContextS(pred, gt,needleShape,needleShape_gt,GrasperJawPoints,video_frame,video_frame_prediction,CtxI,ctxPredLine,frameNumber,L_Gripping,R_Gripping,LG_inter_T, RG_inter_T,messages)
             count += 1
 
         if(len(contextLines) > 2 and SAVE):
@@ -356,7 +362,7 @@ class Context_Iterator:
         except Exception as e:
             L_Dist = 0
             R_Dist = 0 
-        PARAM_JAW_DIST = 25
+        PARAM_JAW_DIST = 28
         #from orig 12, NP is best at 18
         #NP 26: 0.5641
         #NP 42: 0.57910839234271
@@ -451,18 +457,26 @@ class Context_Iterator:
            
             
             if not isinstance(needleShape,list):
-                LG_dist_N =  min([LG_dl.distance(shape) for shape in needleShape.geoms ] )
-                RG_dist_N =  min([RG_dl.distance(shape) for shape in needleShape.geoms] )
-
+                global LG_dist_N_last,RG_dist_N_last
                 try:
-                    RG_inter_N =  max([LG_dl.intersection(make_valid(shape)).area for shape in needleShape.geoms] )
+                    LG_dist_N =  min([LG_dl.distance(shape) for shape in needleShape.geoms ] )
+                    RG_dist_N =  min([RG_dl.distance(shape) for shape in needleShape.geoms] )
+                    LG_dist_N_last,RG_dist_N_last = LG_dist_N,RG_dist_N
+                except Exception as e:
+                    LG_dist_N,RG_dist_N = LG_dist_N_last,RG_dist_N_last
+
+                global LG_inter_N_last,RG_inter_N_last
+                try:
                     LG_inter_N =  max([RG_dl.intersection(make_valid(shape)).area for shape in needleShape.geoms] ) 
+                    RG_inter_N =  max([LG_dl.intersection(make_valid(shape)).area for shape in needleShape.geoms] )
+                    LG_inter_N_last,RG_inter_N_last = LG_inter_N,RG_inter_N
                 except Exception as e:
                     #RG_inter_N =  max([LG_dl.intersection(make_valid(shape)).area for shape in needleShape.geoms] )
                     #LG_inter_N =  max([RG_dl.intersection(make_valid(shape)).area for shape in needleShape.geoms] ) 
-                    print(e,"could not load a shape in GenerateContextLineS")
+                    #print(e,"could not load a shape in GenerateContextLineS")
                     #messages.append("missing contour")
                     #Faulty = True
+                    LG_inter_N,RG_inter_N = LG_inter_N_last,RG_inter_N_last
 
                 N_inter_TS = pred_tissue < 2 
                 scaleF = 1
@@ -485,8 +499,15 @@ class Context_Iterator:
                 messages.append("D(N,Ts):"+"{:.2f}".format(pred_tissue/scaleF))
                 #messages.append("N to Bisector"+"{:.2f}".format(pred_bisector))
 
-                bi_x,bi_y = Bisector.centroid.x,Bisector.centroid.y
-                n_x,n_y = needleShape.geoms[0].centroid.x,needleShape.geoms[0].centroid.y
+                global bi_x_last, n_x_last
+                try:
+                    bi_x,bi_y = Bisector.centroid.x,Bisector.centroid.y
+                    n_x,n_y = needleShape.geoms[0].centroid.x,needleShape.geoms[0].centroid.y
+                    bi_x_last, n_x_last = bi_x, n_x
+
+                except Exception as e:
+                    bi_x, n_x = bi_x_last, n_x_last
+
                 #messages.append("D(N,Ts)"+"{:.2f}".format(pred_tissue))
                 messages.append("N.x:"+"{:.2f}   ".format(n_x))
                 messages.append("Ts.x:"+"{:.2f}   ".format(bi_x))
@@ -609,10 +630,9 @@ class Context_Iterator:
                     LG_x_center,LG_y_center = LG_dl.geoms[0].centroid.x,LG_dl.geoms[0].centroid.y     
             else:
                 LG_x_center,LG_y_center = 400,200
-
             try:
                 RingDistances_L = [ min([LG_dl.distance(shape) for shape in R_GROUP.geoms if not isinstance(LG_dl,list)])  for R_GROUP in ringShapes if not isinstance(R_GROUP,list) ] if ringShapes != [] else []
-                RingDistances_R = [ min([RG_dl.distance(shape) for shape in R_GROUP.geoms if not isinstance(RG_dl,list) ])  for R_GROUP in ringShapes if not isinstance(R_GROUP,list) ] if ringShapes != [] else []  
+                RingDistances_R = [ min([RG_dl.distance(shape) for shape in R_GROUP.geoms if not isinstance(RG_dl,list)])  for R_GROUP in ringShapes if not isinstance(R_GROUP,list) ] if ringShapes != [] else []  
                 RingDistances_N = []
                 absMinDistN = 10000
                 ringID = -1
@@ -666,10 +686,10 @@ class Context_Iterator:
                 messages.append("ToVoid:"+"{:.2f}".format(DistanceToRingInCenter))
                 
             except Exception as e:
-                print(e,"could not load a shape in GenerateContextLineNP")
+                #print(e,"could not load a shape in GenerateContextLineNP")
                 exc_type, exc_obj, exc_tb = sys.exc_info()
                 fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
-                print(exc_type, fname, exc_tb.tb_lineno)
+                #print(exc_type, fname, exc_tb.tb_lineno)
                 messages.append("missing contour")
                 Faulty = True
 
@@ -1116,12 +1136,14 @@ class Context_Iterator:
             x,y = unary_union(LG_dl).exterior.xy
             plt.plot(x,y)                
         except Exception as e:
-            print(e,"No LG DL label : DrawSingleImageContextKT")
+            #print(e,"No LG DL label : DrawSingleImageContextKT")
+            pass
         try:
             x,y = unary_union(RG_dl).exterior.xy
             plt.plot(x,y)
         except Exception as e:
-            print(e,"No RG DL label") 
+            #print(e,"No RG DL label") 
+            pass
         #unaryThread = unary_union(T_dl.geoms)
         #print("thread geoms:",T_dl.geoms,"unaryThread",unaryThread.is_valid,type(unaryThread))
         for thread in T_dl.geoms:
