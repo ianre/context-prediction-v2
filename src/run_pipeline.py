@@ -22,6 +22,7 @@ def all_trial_pipeline(MASK_SET,TRIALS,TASK,CWD):
 
     TOTAL_TIME = 0
     TOTAL_TRIALS = 0
+    allFramesProcessed = []
 
     print("Pipeline Running for task ",TASK)
     for TRIAL in TRIALS:
@@ -30,7 +31,8 @@ def all_trial_pipeline(MASK_SET,TRIALS,TASK,CWD):
         I = Contour_Iterator(MASK_SET,TRIAL,CWD)
         label_classes, ContourFiles, RingFile = I.ExtractContoursTrial(TRIAL,TRIAL_FRAMES)
         I = Context_Iterator(MASK_SET,TASK,TRIAL,CWD)
-        I.GenerateContextTrial(TRIAL,TRIAL_FRAMES,label_classes, ContourFiles,RingFile,SAVE=True)
+        framesProcessed = I.GenerateContextTrial(TRIAL,TRIAL_FRAMES,label_classes, ContourFiles,RingFile,SAVE=True,GENERATE_IMAGES=False)
+        allFramesProcessed.append(framesProcessed)
         end_time = time.time()
         print("\t Processed: ",TRIAL)
         
@@ -45,7 +47,7 @@ def all_trial_pipeline(MASK_SET,TRIALS,TASK,CWD):
     print("                                        ", round((TOTAL_TIME/TOTAL_TRIALS)*1000,4),"ms")
     print("Total Execution time",round(TOTAL_TIME,4),"seconds")
     print("\n---------------------- Metrics --------------------")
-    I = Metrics_Iterator(MASK_SET,TASK,CWD)
+    I = Metrics_Iterator(allFramesProcessed,MASK_SET,TASK,CWD)
     I.IOU()
     quit();
 

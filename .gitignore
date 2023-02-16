@@ -2,7 +2,8 @@
 data/images/*/*.png
 data/masks/*/*/*/*.png
 win-env/
+win-env-2/
 eval/labeled_images/
 data/cogito_annotations/
 eval/contour_images/
-data/contours
+data/contours/*

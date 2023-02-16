@@ -91,11 +91,12 @@ def main():
     quit(); 
 
 class Metrics_Iterator:
-    def __init__(self,MASK_SET, task,CWD):
+    def __init__(self,allFramesProcessed,MASK_SET, task,CWD):
 
         self.CWD = CWD        
         self.task = task
         self.MASK_SET = MASK_SET
+        self.allFramesProcessed = allFramesProcessed
         self.outputDir = os.path.join(self.CWD, self.task,"ctx_output") #ugh
         self.ian = os.path.join(self.CWD,self.task, "ctx_ian")
         self.kay = os.path.join(self.CWD,self.task, "ctx_kay")
@@ -336,11 +337,13 @@ class Metrics_Iterator:
         c3 = []
         c4 = []
         c5 = []
+        self.allFramesProcessed; 
+        Frames_Processed_index = 0
         for root, dirs, files in os.walk(self.pred): # self.consensus will have too many files
             for file in files:
                 if not self.task in file:
-                    continue
-                count=count+1
+                    continue                
+                count=count+1 
                 '''
                 pred_file = os.path.join(self.consensus, file)
                 consensus_file = os.path.join(self.surgeon, file)
@@ -363,13 +366,23 @@ class Metrics_Iterator:
                     print(e)
                     continue
                 
-
+                #if not pred.split(" ")[0] in self.allFramesProcessed[Frames_Processed_index]:
+                #        continue
+                startIndex = self.allFramesProcessed[Frames_Processed_index][0].replace(".png","").split("_")[1]
+                startIndex=int(startIndex)
                 pred_lines_u = self.unrollContext(pred_lines)                
                 consensus_lines_u = self.unrollContext(consensus_lines)
                 
                 LinesMin = min(len(consensus_lines_u),len(pred_lines_u))
-                pred_lines_u = pred_lines_u[0:LinesMin]
-                consensus_lines_u = consensus_lines_u[0:LinesMin]
+                #LinesMin=min(startIndex,LinesMin)
+
+                cuttoff_index = 0
+                for l in pred_lines_u:
+                    if str(startIndex) in l:
+                        break
+                    cuttoff_index+=1
+                pred_lines_u = pred_lines_u[cuttoff_index:LinesMin]
+                consensus_lines_u = consensus_lines_u[cuttoff_index:LinesMin]
 
                 pred_arr = []
                 con_arr = []
@@ -387,10 +400,11 @@ class Metrics_Iterator:
                 state4gt = []
                 state5gt = []
                 for line in pred_lines_u:
+                    
                     if i >= len(pred_lines_u) or i >= len(consensus_lines_u):
                         continue
                     #! boolean array for distance                    
-                    pred = line.replace("\n","")
+                    pred = line.replace("\n","")                    
                     consensus_line = consensus_lines_u[i].replace("\n","")
 
                     p_num =[int(x)+1 for x in pred.split(" ")[1:6]]
@@ -450,6 +464,7 @@ class Metrics_Iterator:
                 print(trialName,":",round(s1,4),round(s2,4),round(s3,4),round(s4,4),round(s5,4))
                 #self.save(out_file,out_lines)
                 #self.save(alpha_file, alpha_lines)
+            Frames_Processed_index=+1
         print("s1 avg",statistics.mean(c1))
         print("s2 avg",statistics.mean(c2))
         print("s3 avg",statistics.mean(c3))

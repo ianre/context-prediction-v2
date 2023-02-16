@@ -17,6 +17,11 @@ class Contour_Iterator:
         self.grasperJawFname = os.path.join(self.CWD,"grasper_jaw_keypoints",TRIAL+".json")
         self.OS = "windows"
 
+    def dilation(self, img):
+        kernel = np.ones ((5, 5), np.uint8)
+        dilated = cv.dilate(img, kernel, iterations=1)
+        return dilated 
+
     def getLabelClassnames(self,TRIAL):        
         if "Knot" in TRIAL:
             return ["leftgrasper","rightgrasper","thread"]
@@ -42,7 +47,7 @@ class Contour_Iterator:
                 ContourFname = self.findMaskContours(label_class,TRIAL,FRAME_NUMS,SAVE_TEST_IMAGE=True,SAVE_DATA=True)
                 ContourFiles.append(ContourFname)
                 classNameIndex+=1
-            RingFile = self.findRingContoursTimed("ring",TRIAL,FRAME_NUMS,SAVE_DATA=True)
+            RingFile = self.findRingContoursTimed("ring",TRIAL,FRAME_NUMS,SAVE_DATA=True,SAVE_TEST_IMAGE=True)
         elif "Suturing" in TRIAL:
             for label_class in label_classes:
                 #ContourFname = self.findAllContoursTask(label_class,label_classNames[classNameIndex],EPOCH,TRIAL,FRAME_NUMS,SAVE_TEST_IMAGE=True,SAVE_DATA=True)
@@ -110,12 +115,10 @@ class Contour_Iterator:
             imageFname = os.path.join(TrialRoot,file)
             if not os.path.isfile(imageFname): continue
             
-            img_3 = np.zeros([500,700,3],dtype=np.uint8)
-            img_3.fill(255)
+            #img_3 = np.zeros([500,700,3],dtype=np.uint8)
+            #img_3.fill(255)
 
-            #outFname =  os.path.join(OutRoot,file.replace(".png",".npy"))
-            non_pred_name = file.replace("_pred","")
-            videoFrame = os.path.join(self.imagesDir,non_pred_name)
+            videoFrame = os.path.join(self.imagesDir,file)
             testFname = os.path.join(OutRoot,file)
             #frameNumber = int(file.replace(".png","").split("_")[1])
             im = cv.imread(imageFname)
@@ -127,7 +130,7 @@ class Contour_Iterator:
             #colors = 
             if(len(contours) ==0):continue
             areas = []
-            largestArea = 0            
+            largestArea = 0
             
             for k in range(len(contours)):                    
                 cnt = contours[k]
@@ -146,13 +149,13 @@ class Contour_Iterator:
                 # smoothing and drop out turned off
                 #if len(Regions) <= 2:
                 #    if area > 15 or len(Regions) == 0:
-                if area < 5: 
+                if area < 20: 
                     continue
                 areasInOrderSaved.append(area)
                 cnt = contours[origIndex]                        
                 X = []
                 Y = []
-                epsilon = 0.1*cv.arcLength(cnt,True) #0.01 smaller number for less smoothing
+                epsilon = 0.001*cv.arcLength(cnt,True) #0.01 smaller number for less smoothing
                 approx = cv.approxPolyDP(cnt,epsilon,True)
                 pts = []
                 for points in approx:
@@ -164,8 +167,8 @@ class Contour_Iterator:
                 newShape = np.array([pts], np.int32)
 
                 #cv.drawContours(im,[approx],0,rbg,1)
-                cv.polylines(img_3, [newShape], True, (0,0,255), thickness=1)
-                #cv.putText(im,LabelClassName,(cnt[0][0][0],cnt[0][0][1]), cv.FONT_HERSHEY_SIMPLEX,0.5,rbg)
+                cv.polylines(im, [newShape], True, (0,0,255), thickness=1)
+                cv.putText(im,label_class,(cnt[0][0][0],cnt[0][0][1]), cv.FONT_HERSHEY_SIMPLEX,0.5,rbg)
                 RegionAttributes.append(label_class)
                 Regions.append([X,Y])
                 #else: 
@@ -174,10 +177,10 @@ class Contour_Iterator:
             #    print(areasInOrderSaved,"------------",areas, end=" ")
             #print(areasInOrderSaved,end=" ")
                     
-            VIA.addFrameMultiRegion(non_pred_name, fileSizeInBytes, Regions, RegionAttributes)
+            VIA.addFrameMultiRegion(file, fileSizeInBytes, Regions, RegionAttributes)
             
             if SAVE_TEST_IMAGE:
-                cv.imwrite(testFname,img_3)
+                cv.imwrite(testFname,im)
             if DEBUG:
                 if len(contours) > 2:
                     print("=======================================================================================================================================================================================================================>",LabelClassName)
@@ -220,8 +223,8 @@ class Contour_Iterator:
                 path = pathlib.Path(PointsRoot)
                 path.mkdir(parents=True, exist_ok=True)
             
-            img_3 = np.zeros([500,700,3],dtype=np.uint8)
-            img_3.fill(255)
+            #img_3 = np.zeros([500,700,3],dtype=np.uint8)
+            #img_3.fill(255)
 
             #outFname =  os.path.join(OutRoot,file.replace(".png",".npy"))
             non_pred_name = file.replace("_pred","")
@@ -275,8 +278,8 @@ class Contour_Iterator:
                 newShape = np.array([pts], np.int32)
 
                 #cv.drawContours(im,[approx],0,rbg,1)
-                cv.polylines(img_3, [newShape], True, (0,0,255), thickness=1)
-                #cv.putText(im,LabelClassName,(cnt[0][0][0],cnt[0][0][1]), cv.FONT_HERSHEY_SIMPLEX,0.5,rbg)
+                cv.polylines(im, [newShape], True, (0,0,255), thickness=1)
+                cv.putText(im,LabelClass,(cnt[0][0][0],cnt[0][0][1]), cv.FONT_HERSHEY_SIMPLEX,0.5,rbg)
                 RegionAttributes.append(LabelClassName)
                 Regions.append([X,Y])
                 #else: 
@@ -288,7 +291,7 @@ class Contour_Iterator:
             VIA.addFrameMultiRegion(non_pred_name, fileSizeInBytes, Regions, RegionAttributes)
             
             if SAVE_TEST_IMAGE:
-                cv.imwrite(testFname,img_3)
+                cv.imwrite(testFname,im)
             if DEBUG:
                 if len(contours) > 2:
                     print("=======================================================================================================================================================================================================================>",LabelClassName)
@@ -349,11 +352,12 @@ class Contour_Iterator:
             Regions = []
             if(len(contours) ==0):continue
             areas = []
-            largestIndex = -1
             largestArea = 0
             for k in range(len(contours)):                    
                 cnt = contours[k]
                 area = cv.contourArea(cnt)
+                if area < 15: 
+                    continue
                 areas.append(area)
                 
                 M = cv.moments(cnt)
@@ -371,7 +375,7 @@ class Contour_Iterator:
                     largestArea=area
                 X = []
                 Y = []
-                epsilon = 0.01*cv.arcLength(cnt,True)
+                epsilon = 0.001*cv.arcLength(cnt,True)
                 approx = cv.approxPolyDP(cnt,epsilon,True)
                 for points in approx:
                     x =int(points[0][0])
@@ -380,15 +384,12 @@ class Contour_Iterator:
                     Y.append(y)
                 RegionAttributes.append("Ring_"+ringID)
                 Regions.append([X,Y])
+                rbg = tuple(int(colors[0].lstrip("#")[j:j+2], 16) for j in (0, 2, 4))
+                cv.putText(im,"Ring_"+ringID,(cnt[0][0][0],cnt[0][0][1]), cv.FONT_HERSHEY_SIMPLEX,0.5,rbg)
+                cv.drawContours(im,[approx],0,rbg,1)
 
-            #ringIDs = ["Ring_4","Ring_5","Ring_6","Ring_7"]
-
-            rbg = tuple(int(colors[0].lstrip("#")[j:j+2], 16) for j in (0, 2, 4))        
-            #cnt = contours[largestIndex]
-            
             ##### DRAW
-            #cv.drawContours(im,[approx],0,rbg,1)
-            #cv.putText(im,LabelClassName,(cnt[0][0][0],cnt[0][0][1]), cv.FONT_HERSHEY_SIMPLEX,0.5,rbg)
+            
             
             #rbg = tuple(int(colors[i].lstrip("#")[j:j+2], 16) for j in (0, 2, 4))
             #cv.drawContours(im,approx,0,rbg,thickness)
