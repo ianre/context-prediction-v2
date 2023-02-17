@@ -22,10 +22,12 @@ global x_center_last,y_center_last
 global LG_dist_N_last,RG_dist_N_last
 global LG_inter_N_last,RG_inter_N_last
 global bi_x_last, n_x_last
+global NeeldeDistances_L_last, NeeldeDistances_R_last
 LG_dist_N_last,RG_dist_N_last = 0,0
 x_center_last,y_center_last = 0,0
 LG_inter_N_last,RG_inter_N_last = 0,0
 bi_x_last, n_x_last =0,0
+NeeldeDistances_L_last, NeeldeDistances_R_last = 0,0
 global closestRingCenterX_last,closestRingCenterY_last
 closestRingCenterX_last,closestRingCenterY_last = 0,0
 Suturing_Needle_Right_of_Tissue = True
@@ -291,9 +293,11 @@ class Context_Iterator:
                 
                 #pred, gt, ringShapes, ringShapes_gt, needleShape, needleShape_gt -> dev
                 ctxPredLine, LG_inter_T, RG_inter_T,messages = self.GenerateContextLineNP(pred, gt, ringShapes, ringShapes_gt, needleShape, needleShape_gt, L_Gripping,R_Gripping,frameNumber,contextLines,Grasper_DistX,currentRing)                        
+                #ctxPredLine, LG_inter_T, RG_inter_T,messages = self.GenerateContextLineNP(gt, pred, ringShapes, ringShapes_gt, needleShape, needleShape_gt, L_Gripping,R_Gripping,frameNumber,contextLines,Grasper_DistX,currentRing)                        
+                
                 #gt, pred, ringShapes_gt, ringShapes, needleShape_gt, needleShape -> GT Test 
                 #ctxPredLine, LG_inter_T, RG_inter_T,messages = self.GenerateContextLineNP(gt, pred, ringShapes_gt, ringShapes, needleShape_gt, needleShape, L_Gripping,R_Gripping,frameNumber,contextLines,Grasper_DistX,currentRing)
-
+                #print("NP CTX:",ctxPredLine)
                 contextLines.append(ctxPredLine)
                 if GENERATE_IMAGES:  self.DrawSingleImageContextNP(pred, gt, ringShapes, ringShapes_gt, needleShape, needleShape_gt,GrasperJawPoints,video_frame,video_frame_prediction,CtxI,ctxPredLine,frameNumber,L_Gripping,R_Gripping,LG_inter_T, RG_inter_T,messages,GT=False)
                 #                        DrawSingleImageContextNP(self,pred, gt,ringShapes,ringShapes_gt,needleShape,needleShape_gt,GrasperJawPoints,imageFName,outputFName,CtxI,ctxPredLine,frameNumber,L_Gripping,R_Gripping,LG_inter_T, RG_inter_T,messages,GT=False):
@@ -372,7 +376,7 @@ class Context_Iterator:
             Grasper_Dist,Grasper_DistX,Grasper_DistY = self.distGraspers(GrasperJawPoints)
         except Exception as e:
             L_Dist = 0
-            R_Dist = 0
+            R_Dist = 0 
         PARAM_JAW_DIST = 18
         if(L_Dist < PARAM_JAW_DIST):
             L_Gripping = True
@@ -700,10 +704,21 @@ class Context_Iterator:
             RingDistances_L = [ min([LG_dl.distance(shape) for shape in R_GROUP.geoms if not isinstance(LG_dl,list)])  for R_GROUP in ringShapes if not isinstance(R_GROUP,list) ] if ringShapes != [] else []
             RingDistances_R = [ min([RG_dl.distance(shape) for shape in R_GROUP.geoms if not isinstance(RG_dl,list)])  for R_GROUP in ringShapes if not isinstance(R_GROUP,list) ] if ringShapes != [] else []  
             
-            NeeldeDistances_L = [ min([LG_dl.distance(shape) for shape in N_GROUP.geoms if not isinstance(LG_dl,list)])  for N_GROUP in needleShape if not isinstance(N_GROUP,list) ] if needleShape != [] else []
-            NeeldeDistances_R = [ min([RG_dl.distance(shape) for shape in N_GROUP.geoms if not isinstance(RG_dl,list)])  for N_GROUP in needleShape if not isinstance(N_GROUP,list) ] if needleShape != [] else []  
-            NeeldeDistances_L = min(NeeldeDistances_L)
-            NeeldeDistances_R = min(NeeldeDistances_R)
+            NeeldeDistances_L = [ min([LG_dl.distance(shape) for shape in needleShape.geoms if not isinstance(LG_dl,list)])  ] if needleShape != [] else []
+            NeeldeDistances_R = [ min([RG_dl.distance(shape) for shape in needleShape.geoms if not isinstance(RG_dl,list)])  ] if needleShape != [] else []  
+            
+            global NeeldeDistances_L_last, NeeldeDistances_R_last
+            if len(NeeldeDistances_L) >=1:
+                NeeldeDistances_L = min(NeeldeDistances_L)
+                NeeldeDistances_L_last = NeeldeDistances_L
+            else:
+                NeeldeDistances_L = NeeldeDistances_L_last
+            if len(NeeldeDistances_R) >=1:
+                NeeldeDistances_R = min(NeeldeDistances_R)
+                NeeldeDistances_R_last = NeeldeDistances_R
+            else:
+                NeeldeDistances_R = NeeldeDistances_R_last
+
             
             
             RingDistances_N = []
@@ -759,10 +774,10 @@ class Context_Iterator:
             messages.append("ToVoid:"+"{:.2f}".format(DistanceToRingInCenter))
             
         except Exception as e:
-            #print(e,"could not load a shape in GenerateContextLineNP")
+            print(e,"could not load a shape in GenerateContextLineNP")
             exc_type, exc_obj, exc_tb = sys.exc_info()
             fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
-            #print(exc_type, fname, exc_tb.tb_lineno)
+            print(exc_type, fname, exc_tb.tb_lineno)
             messages.append("missing contour")
             Faulty = True
 
@@ -776,7 +791,7 @@ class Context_Iterator:
         R_G_Touch = 0
         R_G_Hold = 0
         Extra_State = 0 #Needle / Knot State
-        INTER_THRESH = 1
+        INTER_THRESH = 14
         RING_THRESH = 2
         
         if not Faulty:
