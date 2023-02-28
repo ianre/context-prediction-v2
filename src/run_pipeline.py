@@ -86,6 +86,12 @@ def run_batched_pipeline(trials, TASK, BATCH_SIZE, CWD):
     I.IOU()
     quit();
 
+def eval_context(TASK,CWD):
+    allFramesProcessed = []
+    MASK_SET = ""
+    I = Metrics_Iterator(allFramesProcessed,MASK_SET,TASK,CWD)
+    I.K_Alpha(TASK,CWD)
+
 def main():    
     CWD=os.getcwd()
 
@@ -98,7 +104,7 @@ def main():
         BATCH_or_ALL=sys.argv[2]
         MASK_SET=sys.argv[3]
     except:
-        print("WARNING: no TASK, BATCH, or MASK SET provided","\n Usage: python run_pipeline.py <TASK: Knot_Tying, Suturing,...> <batch size|all> <MASK_SET: 2023_DL, 2023_ICRA,...>","Default Task "+TASK + " for ALL trials")
+        print("WARNING: no TASK, BATCH, or MASK SET provided","\n Usage: python run_pipeline.py <TASK: Knot_Tying, Suturing,...> <batch:size|ALL|EVAL> <MASK_SET: 2023_DL, 2023_ICRA,...>","Default Task "+TASK + " for ALL trials")
     taskDir = os.path.join(CWD,"data","images") # Images dictate the iteration frames
     TRIALS = [] 
     for root, dirs, files in os.walk(taskDir):
@@ -109,6 +115,8 @@ def main():
 
     if(BATCH_or_ALL == "ALL"):
         all_trial_pipeline(MASK_SET,TRIALS,TASK,CWD);
+    elif(BATCH_or_ALL == "EVAL"):
+        eval_context(TASK,CWD)
     else:
         BATCH_SIZE = int(BATCH_or_ALL)
         run_batched_pipeline(TRIALS,TASK,BATCH_SIZE,CWD);

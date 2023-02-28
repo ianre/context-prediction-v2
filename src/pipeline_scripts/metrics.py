@@ -23,14 +23,6 @@ invalid_States = {}
 
 from scipy.spatial import distance
 
-'''
-This program combines labels in "kay", "ian", and "volunteer" folders into three types of consensus data:
-
-"output" contains the consensus labels
-"match" contains a comparison between all labels as well as kappa for all 4 sets (kay vs. ian vs. volunteer) and (kay vs. ian vs. volunteer vs. consensus)
-"kappa" 
-'''
-
 mathematicaColors = {
     "blue":"#5E81B5",
     "orange":"#E09C24",
@@ -103,7 +95,7 @@ class Metrics_Iterator:
         self.pred = os.path.join(self.CWD,"eval","pred_context_labels",MASK_SET)
         self.context_proc = os.path.join(self.CWD,self.task,"context_proc_30fps_gt")
         self.consensus = os.path.join(self.CWD,"data","context_labels","consensus")
-        self.surgeon =      os.path.join(self.CWD, self.task,"ctx_surgeon")    
+        self.surgeon = os.path.join(self.CWD,"data","context_labels","labeler_3")  
         self.alpha = os.path.join(self.CWD, self.task,"k_alpha")
 
     def generate30fps(self):
@@ -242,7 +234,37 @@ class Metrics_Iterator:
 
         return n_lines
 
+    def K_Alpha(self,TASK,CWD):
+        # find trial in Consensus
+        TRIAL = "" 
+        for root, dirs, files in os.walk(self.surgeon):
+            TRIAL = [x for x in files if TASK in x]
+            #print(TRIAL)
+            TRIAL = TRIAL[0]
+            break
+        surgeon_file = os.path.join(self.surgeon,TRIAL)
+        consensus_file = os.path.join(self.consensus,TRIAL)
+        if not os.path.isfile(consensus_file):
+            return
+        surgeon_lines = self.getFile(surgeon_file)
+        consensus_lines = self.getFile(consensus_file)
+
+        K_ALPHA = []
+        for line_num in range(0,len(surgeon_lines)):
+            k_alpha = self.k_alpha_line(surgeon_lines[line_num],consensus_lines[line_num])
+            K_ALPHA.append(k_alpha)
+        avg = sum(K_ALPHA) / len(K_ALPHA) 
+        print("Trial:",TRIAL,"\nTASK",TASK)
+        print("Average K Alpha between Surgeon and Consensus: ", str(round(avg,4)))
+
         
+
+    def getFile(self,FILE):
+        out_lines = []
+        with open(FILE) as FILE_data:
+            for line in FILE_data:
+                out_lines.append(line.strip())
+        return out_lines
     def poll(self):
         # get a filename from Kay's set:
         count = 0
@@ -813,6 +835,23 @@ class Metrics_Iterator:
         line = line + self.getK_Kappa(arr, "ratio",ZERO_ROW)
        
         return line
+
+    def k_alpha_line(self, A_line, B_line ):
+        # X_S means array of "S"trings from x's line
+        A_s = A_line.split(" ")
+        B_s = B_line.split(" ")
+        # to do math
+
+        A_n = self.getListOfInts_no_plus_1_offset(A_s[1:])
+        B_n = self.getListOfInts_no_plus_1_offset(B_s[1:])
+        arr = [A_n,B_n]
+        ZERO_ROW = self.testZeroRow(A_n) and self.testZeroRow(B_n)
+        return float(self.getK_Kappa(arr, "nominal",ZERO_ROW))
+        #line = line + self.getK_Kappa(arr, "ordinal",ZERO_ROW)
+        #line = line + self.getK_Kappa(arr, "interval",ZERO_ROW)
+        #line = line + self.getK_Kappa(arr, "ratio",ZERO_ROW)
+       
+        #return line
 
     def pollLine_output(self, k_line, i_line, v_line,DEBUG=True):
         k_s = k_line.split(" ")
